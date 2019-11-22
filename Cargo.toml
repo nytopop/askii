@@ -1,0 +1,21 @@
+[package]
+name = "askii"
+description = "A tool for drawing ASCII diagrams."
+version = "0.1.0"
+authors = ["nytopop <ericizoita@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+structopt = "0.3.4"
+log = "0.4.8"
+lazy_static = "1.4.0"
+parking_lot = "0.9.0"
+line_drawing = "0.8.0"
+
+[dependencies.cursive]
+# version = "0.13.0" # github
+version = "0.13.1-alpha.0"
+features = ["pancurses-backend", "unstable_scroll"]
+git = "https://github.com/gyscos/cursive.git"
