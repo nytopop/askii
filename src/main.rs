@@ -400,24 +400,7 @@ impl Editor {
             &mut preview_buffer
         };
 
-        if let Some(points) = self.tool.points() {
-            for Point { pos, c, .. } in points.into_iter() {
-                if let Some(c) = c {
-                    while buffer.len() <= pos.y {
-                        buffer.push(vec![]);
-                    }
-                    while buffer[pos.y].len() <= pos.x {
-                        buffer[pos.y].push(' ');
-                    }
-
-                    match (buffer[pos.y][pos.x], c, self.opts.overlap_h) {
-                        ('-', '|', Some(true)) => {}
-                        ('|', '-', Some(false)) => {}
-                        _ => buffer[pos.y][pos.x] = c,
-                    }
-                }
-            }
-        } else {
+        if !self.tool.render_to(buffer) {
             return;
         }
 

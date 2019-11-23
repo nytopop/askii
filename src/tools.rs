@@ -3,10 +3,10 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 use super::Options;
-use cursive::{direction::Absolute, Rect, Vec2};
+use cursive::{direction::Absolute, Rect, Vec2, XY};
 use line_drawing::Bresenham;
 use log::warn;
-use std::fmt;
+use std::{cmp, fmt};
 
 macro_rules! if_let {
     ($i:pat = $e:expr; $p:expr => $x:expr) => {
@@ -23,12 +23,12 @@ macro_rules! if_let {
 
 pub trait Tool: fmt::Display {
     /// Configure this tool with the provided options.
-    fn load_opts(&mut self, opts: &Options) {}
+    // TODO: settings menu is difficult to use, alternatives:
+    // * checkboxes that are scoped per tool, in a toolbar under the menubar
+    fn load_opts(&mut self, opts: &Options);
 
-    /// Returns any points that need to be rendered, or `None` if there isn't anything
-    /// to render.
-    // TODO: this is inflexible. instead, provide access to &mut Vec<Vec<char>>
-    fn points(&self) -> Option<Vec<Point>>;
+    /// Render to the provided buffer, returning false iff no changes were made.
+    fn render_to(&self, buffer: &mut Vec<Vec<char>>) -> bool;
 
     /// Callback to execute when the left mouse button is pressed. Returns whether the
     /// next call to `points` should be saved.
@@ -53,30 +53,12 @@ pub trait Tool: fmt::Display {
     fn reset(&mut self);
 }
 
-pub struct Point {
-    pub pos: Vec2,
-    pub c: Option<char>,
-    pub hl: bool,
-}
-
-impl Point {
-    fn plain(pos: Vec2, c: char) -> Self {
-        Point {
-            pos,
-            c: Some(c),
-            hl: false,
-        }
-    }
-
-    fn curry_plain(c: char) -> impl Fn(Vec2) -> Self {
-        move |pos| Self::plain(pos, c)
-    }
-}
-
 #[derive(Copy, Clone, Default, Debug)]
 pub struct BoxTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
+
+    overlap_h: Option<bool>,
 }
 
 impl fmt::Display for BoxTool {
@@ -86,43 +68,24 @@ impl fmt::Display for BoxTool {
 }
 
 impl Tool for BoxTool {
-    fn points(&self) -> Option<Vec<Point>> {
-        let rect = Rect::from_corners(self.origin?, self.target?);
-        let mut points = Vec::with_capacity((rect.width() * 2) + (rect.height() * 2));
+    fn load_opts(&mut self, opts: &Options) {
+        self.overlap_h = opts.overlap_h;
+    }
 
-        points.extend(
-            (rect.left()..rect.right())
-                .map(|x| Vec2::new(x, rect.top()))
-                .map(Point::curry_plain('-')),
-        );
-        points.extend(
-            (rect.left()..rect.right())
-                .map(|x| Vec2::new(x, rect.bottom()))
-                .map(Point::curry_plain('-')),
-        );
-        points.extend(
-            (rect.top()..rect.bottom())
-                .map(|y| Vec2::new(rect.left(), y))
-                .map(Point::curry_plain('|')),
-        );
-        points.extend(
-            (rect.top()..rect.bottom())
-                .map(|y| Vec2::new(rect.right(), y))
-                .map(Point::curry_plain('|')),
-        );
+    fn render_to(&self, buffer: &mut Vec<Vec<char>>) -> bool {
+        let (origin, target) = match (self.origin, self.target) {
+            (Some(o), Some(t)) => (o, t),
+            _ => return false,
+        };
 
-        points.extend(
-            vec![
-                rect.top_left(),
-                rect.top_right(),
-                rect.bottom_left(),
-                rect.bottom_right(),
-            ]
-            .into_iter()
-            .map(Point::curry_plain('+')),
-        );
+        let r = Rect::from_corners(origin, target);
 
-        Some(points)
+        draw_line(self.overlap_h, buffer, r.top_left(), r.top_right());
+        draw_line(self.overlap_h, buffer, r.top_right(), r.bottom_right());
+        draw_line(self.overlap_h, buffer, r.bottom_right(), r.bottom_left());
+        draw_line(self.overlap_h, buffer, r.bottom_left(), r.top_left());
+
+        true
     }
 
     fn on_press(&mut self, pos: Vec2) -> bool {
@@ -150,8 +113,10 @@ impl Tool for BoxTool {
 pub struct LineTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
+
     direct: bool,
     snap45: bool,
+    overlap_h: Option<bool>,
 }
 
 impl fmt::Display for LineTool {
@@ -170,48 +135,41 @@ impl Tool for LineTool {
     fn load_opts(&mut self, opts: &Options) {
         self.direct = opts.line_direct;
         self.snap45 = opts.line_snap45;
+        self.overlap_h = opts.overlap_h;
     }
 
-    fn points(&self) -> Option<Vec<Point>> {
-        let origin = self.origin?;
-        let target = self.target?;
-
-        let mut points = vec![];
+    fn render_to(&self, buffer: &mut Vec<Vec<char>>) -> bool {
+        let (origin, target) = match (self.origin, self.target) {
+            (Some(o), Some(t)) => (o, t),
+            _ => return false,
+        };
 
         if self.direct {
-            let s = (origin.x as isize, origin.y as isize);
-            let e = (target.x as isize, target.y as isize);
-
-            points.extend(Bresenham::new(s, e).steps().map(|(s, e)| {
-                Point::plain(
-                    Vec2::new(s.0 as usize, s.1 as usize),
-                    match line_slope(s, e) {
-                        (0, _) => '|',
-                        (_, 0) => '-',
-                        (x, y) if (x > 0) == (y > 0) => '\\',
-                        _ => '/',
-                    },
-                )
-            }));
-
-            points.first_mut().map(|p| p.c.replace('+'));
-            points.push(Point::plain(target, '+'));
-
-            return Some(points);
+            draw_line(self.overlap_h, buffer, origin, target);
+            return true;
         }
 
-        // TODO: complete this
-        // we can still use bresenham, just change the endpoints
-        // ah, problem is: the route requires buffer access
-        //
-        // so, for proper behavior:
-        // * if the endpoint is -, do x -> y
-        // * otherwise, do y -> x
-        if self.snap45 {}
+        let mid = if self.snap45 {
+            let delta = cmp::min(diff(origin.y, target.y), diff(origin.x, target.x));
 
-        // snap90
+            match line_slope_v(origin, target) {
+                s if s.x < 0 && s.y < 0 => target.map(|v| v + delta),
+                s if s.x > 0 && s.y < 0 => target.map_x(|x| x - delta).map_y(|y| y + delta),
+                s if s.x < 0 && s.y > 0 => target.map_x(|x| x + delta).map_y(|y| y - delta),
+                s if s.x > 0 && s.y > 0 => target.map(|v| v - delta),
+                _ => origin,
+            }
+        } else {
+            match buffer.get(target.y).and_then(|buf| buf.get(target.x)) {
+                Some('-') => Vec2::new(target.x, origin.y),
+                _ => Vec2::new(origin.x, target.y),
+            }
+        };
 
-        Some(points)
+        draw_line(self.overlap_h, buffer, origin, mid);
+        draw_line(self.overlap_h, buffer, mid, target);
+
+        true
     }
 
     fn on_press(&mut self, pos: Vec2) -> bool {
@@ -235,6 +193,52 @@ impl Tool for LineTool {
     }
 }
 
+/// Draw a line from origin to target.
+fn draw_line(overlap_h: Option<bool>, buffer: &mut Vec<Vec<char>>, origin: Vec2, target: Vec2) {
+    let s = (origin.x as isize, origin.y as isize);
+    let e = (target.x as isize, target.y as isize);
+
+    for (i, (s, e)) in Bresenham::new(s, e).steps().enumerate() {
+        let c = match line_slope(s, e) {
+            _ if i == 0 => '+',
+            (0, _) => '|',
+            (_, 0) => '-',
+            (x, y) if (x > 0) == (y > 0) => '\\',
+            _ => '/',
+        };
+
+        set(overlap_h, buffer, s.0 as usize, s.1 as usize, c);
+    }
+
+    set(overlap_h, buffer, target.x, target.y, '+');
+}
+
+/// Set the cell at (x, y) to c, respecting overlap rules.
+///
+/// Allocates additional storage if necessary, setting empty cells to ' '.
+fn set(overlap_h: Option<bool>, buffer: &mut Vec<Vec<char>>, x: usize, y: usize, c: char) {
+    while buffer.len() <= y {
+        buffer.push(vec![]);
+    }
+    while buffer[y].len() <= x {
+        buffer[y].push(' ');
+    }
+
+    match (buffer[y][x], c, overlap_h) {
+        ('-', '|', Some(true)) => {}
+        ('|', '-', Some(false)) => {}
+        _ => buffer[y][x] = c,
+    }
+}
+
+type IVec2 = XY<isize>;
+
+/// Returns the slope between points origin and target.
+fn line_slope_v(origin: Vec2, target: Vec2) -> IVec2 {
+    line_slope(IVec2::from(origin).pair(), IVec2::from(target).pair()).into()
+}
+
+/// Returns the x and y slope between points origin and target.
 fn line_slope(origin: (isize, isize), target: (isize, isize)) -> (isize, isize) {
     let mut x = target.0 - origin.0;
     let mut y = target.1 - origin.1;
@@ -247,6 +251,7 @@ fn line_slope(origin: (isize, isize), target: (isize, isize)) -> (isize, isize) 
     (x, y)
 }
 
+/// Returns the greatest common denominator between x and y.
 fn gcd(x: isize, y: isize) -> isize {
     let mut x = x;
     let mut y = y;
@@ -257,4 +262,9 @@ fn gcd(x: isize, y: isize) -> isize {
     }
 
     x.abs()
+}
+
+/// Returns the absolute difference between x and y.
+fn diff(x: usize, y: usize) -> usize {
+    (x as isize - y as isize).abs() as usize
 }
