@@ -54,6 +54,27 @@ pub trait Tool: fmt::Display {
     fn reset(&mut self);
 }
 
+const SP: char = ' ';
+const DASH: char = '-';
+const PIPE: char = '|';
+const DIAG: char = '/';
+const GAID: char = '\\';
+const PLUS: char = '+';
+
+const N: char = '^';
+const S: char = 'v';
+const W: char = '<';
+const E: char = '>';
+
+const S_N: (isize, isize) = (0, -1);
+const S_NE: (isize, isize) = (1, -1);
+const S_E: (isize, isize) = (1, 0);
+const S_SE: (isize, isize) = (1, 1);
+const S_S: (isize, isize) = (0, 1);
+const S_SW: (isize, isize) = (-1, 1);
+const S_W: (isize, isize) = (-1, 0);
+const S_NW: (isize, isize) = (-1, -1);
+
 #[derive(Copy, Clone, Default, Debug)]
 pub struct BoxTool {
     origin: Option<Vec2>,
@@ -116,9 +137,9 @@ pub struct LineTool {
 impl fmt::Display for LineTool {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.snap45 {
-            write!(f, "Line [ Snap 45 ]")
+            write!(f, "Line: Snap 45")
         } else {
-            write!(f, "Line [ Snap 90 ]")
+            write!(f, "Line: Snap 90")
         }
     }
 }
@@ -169,6 +190,18 @@ impl Tool for LineTool {
     }
 }
 
+fn line_midpoint_45(origin: Vec2, target: Vec2) -> Vec2 {
+    let delta = cmp::min(diff(origin.y, target.y), diff(origin.x, target.x));
+
+    match line_slope_v(origin, target) {
+        s if s.x < 0 && s.y < 0 => target.map(|v| v + delta),
+        s if s.x > 0 && s.y < 0 => target.map_x(|x| x - delta).map_y(|y| y + delta),
+        s if s.x < 0 && s.y > 0 => target.map_x(|x| x + delta).map_y(|y| y - delta),
+        s if s.x > 0 && s.y > 0 => target.map(|v| v - delta),
+        _ => origin,
+    }
+}
+
 #[derive(Copy, Clone, Default, Debug)]
 pub struct ArrowTool {
     origin: Option<Vec2>,
@@ -179,9 +212,9 @@ pub struct ArrowTool {
 impl fmt::Display for ArrowTool {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.snap45 {
-            write!(f, "Arrow [ Snap 45 ]")
+            write!(f, "Arrow: Snap 45")
         } else {
-            write!(f, "Arrow [ Snap 90 ]")
+            write!(f, "Arrow: Snap 90")
         }
     }
 }
@@ -240,39 +273,40 @@ impl Tool for ArrowTool {
     }
 }
 
-fn line_midpoint_45(origin: Vec2, target: Vec2) -> Vec2 {
-    let delta = cmp::min(diff(origin.y, target.y), diff(origin.x, target.x));
+#[derive(Copy, Clone, Default, Debug)]
+pub struct TextTool {
+    //
+}
 
-    match line_slope_v(origin, target) {
-        s if s.x < 0 && s.y < 0 => target.map(|v| v + delta),
-        s if s.x > 0 && s.y < 0 => target.map_x(|x| x - delta).map_y(|y| y + delta),
-        s if s.x < 0 && s.y > 0 => target.map_x(|x| x + delta).map_y(|y| y - delta),
-        s if s.x > 0 && s.y > 0 => target.map(|v| v - delta),
-        _ => origin,
+impl fmt::Display for TextTool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Text")
     }
 }
 
-const SP: char = ' ';
-const DASH: char = '-';
-const PIPE: char = '|';
-const DIAG: char = '/';
-const GAID: char = '\\';
-const PLUS: char = '+';
+impl Tool for TextTool {
+    fn load_opts(&mut self, opts: &Options) {}
 
-const N: char = '^';
-const S: char = 'v';
-const W: char = '<';
-const E: char = '>';
+    fn render_to(&self, buffer: &mut Vec<Vec<char>>) -> bool {
+        false
+    }
 
-const S_N: (isize, isize) = (0, -1);
-const S_NE: (isize, isize) = (1, -1);
-const S_E: (isize, isize) = (1, 0);
-const S_SE: (isize, isize) = (1, 1);
-const S_S: (isize, isize) = (0, 1);
-const S_SW: (isize, isize) = (-1, 1);
-const S_W: (isize, isize) = (-1, 0);
-const S_NW: (isize, isize) = (-1, -1);
+    fn on_press(&mut self, pos: Vec2) -> bool {
+        false
+    }
 
+    fn on_hold(&mut self, pos: Vec2) -> bool {
+        false
+    }
+
+    fn on_release(&mut self, pos: Vec2) -> bool {
+        false
+    }
+
+    fn reset(&mut self) {}
+}
+
+/// Draw an arrow from origin to target.
 fn draw_arrow(buffer: &mut Vec<Vec<char>>, origin: Vec2, target: Vec2) {
     draw_line(buffer, origin, target);
 
@@ -326,6 +360,9 @@ fn draw_line(buffer: &mut Vec<Vec<char>>, origin: Vec2, target: Vec2) {
     setp_v(buffer, target, PLUS);
 }
 
+/// Set the cell at pos to c, respecting character precedence.
+///
+/// Allocates additional storage if necessary, setting empty cells to `SP`.
 fn setp_v(buffer: &mut Vec<Vec<char>>, pos: Vec2, c: char) {
     setp(buffer, pos.x, pos.y, c)
 }
@@ -346,10 +383,16 @@ fn setp(buffer: &mut Vec<Vec<char>>, x: usize, y: usize, c: char) {
     }
 }
 
+/// Set the cell at pos to c, ignoring character precedence.
+///
+/// Allocates additional storage if necessary, setting empty cells to `SP`.
 fn setf_v(buffer: &mut Vec<Vec<char>>, pos: Vec2, c: char) {
     setf(buffer, pos.x, pos.y, c)
 }
 
+/// Set the cell at (x, y) to c, ignoring character precedence.
+///
+/// Allocates additional storage if necessary, setting empty cells to `SP`.
 fn setf(buffer: &mut Vec<Vec<char>>, x: usize, y: usize, c: char) {
     while buffer.len() <= y {
         buffer.push(vec![]);
@@ -360,6 +403,7 @@ fn setf(buffer: &mut Vec<Vec<char>>, x: usize, y: usize, c: char) {
     buffer[y][x] = c;
 }
 
+/// Returns the overlap precedence for c.
 fn precedence(c: char) -> usize {
     match c {
         PLUS => 5,
@@ -371,14 +415,17 @@ fn precedence(c: char) -> usize {
     }
 }
 
+/// Returns true if the cell at (x, y) exists and is not `SP`.
 fn exists(buffer: &Vec<Vec<char>>, x: usize, y: usize) -> bool {
     get(buffer, x, y).unwrap_or(SP) != SP
 }
 
+/// Returns the character at pos, if it exists.
 fn getv(buffer: &Vec<Vec<char>>, pos: Vec2) -> Option<char> {
     get(buffer, pos.x, pos.y)
 }
 
+/// Returns the character at (x, y), if it exists.
 fn get(buffer: &Vec<Vec<char>>, x: usize, y: usize) -> Option<char> {
     buffer.get(y).and_then(|v| v.get(x)).copied()
 }

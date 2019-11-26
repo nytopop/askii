@@ -88,6 +88,7 @@ fn main() -> MainResult<()> {
                     set_tool::<ArrowTool, _>(|o| o.line_snap45 = false),
                 ),
         )
+        .add_leaf("Text", set_tool::<TextTool, _>(|_| ()))
         .add_delimiter()
         .add_leaf(format!("{{ {} }}", editor.tool), |_| ());
 
@@ -118,8 +119,6 @@ where
     T: Tool + Default + 'static,
     S: Fn(&mut Options) + 'static,
 {
-    const ACTIVE_TOOL: usize = 6;
-
     move |siv| {
         let editor = get_editor(siv);
         set(&mut editor.opts);
@@ -129,8 +128,9 @@ where
         drop(editor);
 
         let menu = siv.menubar();
-        menu.remove(ACTIVE_TOOL);
-        menu.insert_leaf(ACTIVE_TOOL, tool, |_| ());
+        let idx = menu.len() - 1;
+        menu.remove(idx);
+        menu.insert_leaf(idx, tool, |_| ());
     }
 }
 
