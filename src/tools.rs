@@ -28,6 +28,7 @@ pub trait Tool: fmt::Display {
     fn load_opts(&mut self, opts: &Options);
 
     /// Render to the provided buffer, returning false iff no changes were made.
+    // TODO: make a better buffer type, with drawing primitives as methods
     fn render_to(&self, buffer: &mut Vec<Vec<char>>) -> bool;
 
     /// Callback to execute when the left mouse button is pressed. Returns whether the
@@ -57,8 +58,6 @@ pub trait Tool: fmt::Display {
 pub struct BoxTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
-
-    overlap_h: Option<bool>,
 }
 
 impl fmt::Display for BoxTool {
@@ -68,9 +67,7 @@ impl fmt::Display for BoxTool {
 }
 
 impl Tool for BoxTool {
-    fn load_opts(&mut self, opts: &Options) {
-        self.overlap_h = opts.overlap_h;
-    }
+    fn load_opts(&mut self, opts: &Options) {}
 
     fn render_to(&self, buffer: &mut Vec<Vec<char>>) -> bool {
         let (origin, target) = match (self.origin, self.target) {
@@ -80,10 +77,10 @@ impl Tool for BoxTool {
 
         let r = Rect::from_corners(origin, target);
 
-        draw_line(self.overlap_h, buffer, r.top_left(), r.top_right());
-        draw_line(self.overlap_h, buffer, r.top_right(), r.bottom_right());
-        draw_line(self.overlap_h, buffer, r.bottom_right(), r.bottom_left());
-        draw_line(self.overlap_h, buffer, r.bottom_left(), r.top_left());
+        draw_line(buffer, r.top_left(), r.top_right());
+        draw_line(buffer, r.top_right(), r.bottom_right());
+        draw_line(buffer, r.bottom_right(), r.bottom_left());
+        draw_line(buffer, r.bottom_left(), r.top_left());
 
         true
     }
@@ -113,17 +110,12 @@ impl Tool for BoxTool {
 pub struct LineTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
-
-    direct: bool,
     snap45: bool,
-    overlap_h: Option<bool>,
 }
 
 impl fmt::Display for LineTool {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.direct {
-            write!(f, "Line [ Direct ]")
-        } else if self.snap45 {
+        if self.snap45 {
             write!(f, "Line [ Snap 45 ]")
         } else {
             write!(f, "Line [ Snap 90 ]")
@@ -133,9 +125,7 @@ impl fmt::Display for LineTool {
 
 impl Tool for LineTool {
     fn load_opts(&mut self, opts: &Options) {
-        self.direct = opts.line_direct;
         self.snap45 = opts.line_snap45;
-        self.overlap_h = opts.overlap_h;
     }
 
     fn render_to(&self, buffer: &mut Vec<Vec<char>>) -> bool {
@@ -144,30 +134,16 @@ impl Tool for LineTool {
             _ => return false,
         };
 
-        if self.direct {
-            draw_line(self.overlap_h, buffer, origin, target);
-            return true;
-        }
-
         let mid = if self.snap45 {
-            let delta = cmp::min(diff(origin.y, target.y), diff(origin.x, target.x));
-
-            match line_slope_v(origin, target) {
-                s if s.x < 0 && s.y < 0 => target.map(|v| v + delta),
-                s if s.x > 0 && s.y < 0 => target.map_x(|x| x - delta).map_y(|y| y + delta),
-                s if s.x < 0 && s.y > 0 => target.map_x(|x| x + delta).map_y(|y| y - delta),
-                s if s.x > 0 && s.y > 0 => target.map(|v| v - delta),
-                _ => origin,
-            }
+            line_midpoint_45(origin, target)
         } else {
-            match buffer.get(target.y).and_then(|buf| buf.get(target.x)) {
-                Some('-') => Vec2::new(target.x, origin.y),
+            match getv(buffer, target) {
+                Some(DASH) => Vec2::new(target.x, origin.y),
                 _ => Vec2::new(origin.x, target.y),
             }
         };
-
-        draw_line(self.overlap_h, buffer, origin, mid);
-        draw_line(self.overlap_h, buffer, mid, target);
+        draw_line(buffer, origin, mid);
+        draw_line(buffer, mid, target);
 
         true
     }
@@ -193,42 +169,218 @@ impl Tool for LineTool {
     }
 }
 
+#[derive(Copy, Clone, Default, Debug)]
+pub struct ArrowTool {
+    origin: Option<Vec2>,
+    target: Option<Vec2>,
+    snap45: bool,
+}
+
+impl fmt::Display for ArrowTool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.snap45 {
+            write!(f, "Arrow [ Snap 45 ]")
+        } else {
+            write!(f, "Arrow [ Snap 90 ]")
+        }
+    }
+}
+
+impl Tool for ArrowTool {
+    fn load_opts(&mut self, opts: &Options) {
+        self.snap45 = opts.line_snap45;
+    }
+
+    fn render_to(&self, buffer: &mut Vec<Vec<char>>) -> bool {
+        let (origin, target) = match (self.origin, self.target) {
+            (Some(o), Some(t)) => (o, t),
+            _ => return false,
+        };
+
+        let mid = if self.snap45 {
+            line_midpoint_45(origin, target)
+        } else {
+            // TODO(bug): this snaps the guiding line based on the position of the arrow
+            // tip, when it should be based on the character immediately beyond the tip.
+            // * check target x +/- 1, y +/- 1?
+            match getv(buffer, target) {
+                Some(DASH) => Vec2::new(target.x, origin.y),
+                __________ => Vec2::new(origin.x, target.y),
+            }
+        };
+
+        if mid != target {
+            draw_line(buffer, origin, mid);
+            draw_arrow(buffer, mid, target);
+        } else {
+            draw_arrow(buffer, origin, target);
+        }
+
+        true
+    }
+
+    fn on_press(&mut self, pos: Vec2) -> bool {
+        self.origin = Some(pos);
+        false
+    }
+
+    fn on_hold(&mut self, pos: Vec2) -> bool {
+        self.target = Some(pos);
+        false
+    }
+
+    fn on_release(&mut self, pos: Vec2) -> bool {
+        self.target = Some(pos);
+        true
+    }
+
+    fn reset(&mut self) {
+        self.origin = None;
+        self.target = None;
+    }
+}
+
+fn line_midpoint_45(origin: Vec2, target: Vec2) -> Vec2 {
+    let delta = cmp::min(diff(origin.y, target.y), diff(origin.x, target.x));
+
+    match line_slope_v(origin, target) {
+        s if s.x < 0 && s.y < 0 => target.map(|v| v + delta),
+        s if s.x > 0 && s.y < 0 => target.map_x(|x| x - delta).map_y(|y| y + delta),
+        s if s.x < 0 && s.y > 0 => target.map_x(|x| x + delta).map_y(|y| y - delta),
+        s if s.x > 0 && s.y > 0 => target.map(|v| v - delta),
+        _ => origin,
+    }
+}
+
+const SP: char = ' ';
+const DASH: char = '-';
+const PIPE: char = '|';
+const DIAG: char = '/';
+const GAID: char = '\\';
+const PLUS: char = '+';
+
+const N: char = '^';
+const S: char = 'v';
+const W: char = '<';
+const E: char = '>';
+
+const S_N: (isize, isize) = (0, -1);
+const S_NE: (isize, isize) = (1, -1);
+const S_E: (isize, isize) = (1, 0);
+const S_SE: (isize, isize) = (1, 1);
+const S_S: (isize, isize) = (0, 1);
+const S_SW: (isize, isize) = (-1, 1);
+const S_W: (isize, isize) = (-1, 0);
+const S_NW: (isize, isize) = (-1, -1);
+
+fn draw_arrow(buffer: &mut Vec<Vec<char>>, origin: Vec2, target: Vec2) {
+    draw_line(buffer, origin, target);
+
+    let c = match line_slope_v(origin, target).pair() {
+        S_N => N,
+        S_E => E,
+        S_S => S,
+        S_W => W,
+
+        // SE
+        (x, y) if x > 0 && y > 0 && exists(buffer, target.x + 1, target.y) => E,
+        (x, y) if x > 0 && y > 0 => S,
+
+        // NE
+        (x, y) if x > 0 && y < 0 && exists(buffer, target.x + 1, target.y) => E,
+        (x, y) if x > 0 && y < 0 => N,
+
+        // SW
+        (x, y) if x < 0 && y > 0 && target.x == 0 => S,
+        (x, y) if x < 0 && y > 0 && exists(buffer, target.x - 1, target.y) => W,
+        (x, y) if x < 0 && y > 0 => S,
+
+        // NW
+        (x, y) if x < 0 && y < 0 && target.x == 0 => N,
+        (x, y) if x < 0 && y < 0 && exists(buffer, target.x - 1, target.y) => W,
+        (x, y) if x < 0 && y < 0 => N,
+
+        _ => PLUS,
+    };
+
+    setf_v(buffer, target, c);
+}
+
 /// Draw a line from origin to target.
-fn draw_line(overlap_h: Option<bool>, buffer: &mut Vec<Vec<char>>, origin: Vec2, target: Vec2) {
+fn draw_line(buffer: &mut Vec<Vec<char>>, origin: Vec2, target: Vec2) {
     let s = (origin.x as isize, origin.y as isize);
     let e = (target.x as isize, target.y as isize);
 
     for (i, (s, e)) in Bresenham::new(s, e).steps().enumerate() {
         let c = match line_slope(s, e) {
-            _ if i == 0 => '+',
-            (0, _) => '|',
-            (_, 0) => '-',
-            (x, y) if (x > 0) == (y > 0) => '\\',
-            _ => '/',
+            _ if i == 0 => PLUS,
+            (0, _) => PIPE,
+            (_, 0) => DASH,
+            (x, y) if (x > 0) == (y > 0) => GAID,
+            _ => DIAG,
         };
 
-        set(overlap_h, buffer, s.0 as usize, s.1 as usize, c);
+        setp(buffer, s.0 as usize, s.1 as usize, c);
     }
 
-    set(overlap_h, buffer, target.x, target.y, '+');
+    setp_v(buffer, target, PLUS);
 }
 
-/// Set the cell at (x, y) to c, respecting overlap rules.
+fn setp_v(buffer: &mut Vec<Vec<char>>, pos: Vec2, c: char) {
+    setp(buffer, pos.x, pos.y, c)
+}
+
+/// Set the cell at (x, y) to c, respecting character precedence.
 ///
-/// Allocates additional storage if necessary, setting empty cells to ' '.
-fn set(overlap_h: Option<bool>, buffer: &mut Vec<Vec<char>>, x: usize, y: usize, c: char) {
+/// Allocates additional storage if necessary, setting empty cells to `SP`.
+fn setp(buffer: &mut Vec<Vec<char>>, x: usize, y: usize, c: char) {
     while buffer.len() <= y {
         buffer.push(vec![]);
     }
     while buffer[y].len() <= x {
-        buffer[y].push(' ');
+        buffer[y].push(SP);
     }
 
-    match (buffer[y][x], c, overlap_h) {
-        ('-', '|', Some(true)) => {}
-        ('|', '-', Some(false)) => {}
-        _ => buffer[y][x] = c,
+    if precedence(c) >= precedence(buffer[y][x]) {
+        buffer[y][x] = c;
     }
+}
+
+fn setf_v(buffer: &mut Vec<Vec<char>>, pos: Vec2, c: char) {
+    setf(buffer, pos.x, pos.y, c)
+}
+
+fn setf(buffer: &mut Vec<Vec<char>>, x: usize, y: usize, c: char) {
+    while buffer.len() <= y {
+        buffer.push(vec![]);
+    }
+    while buffer[y].len() <= x {
+        buffer[y].push(SP);
+    }
+    buffer[y][x] = c;
+}
+
+fn precedence(c: char) -> usize {
+    match c {
+        PLUS => 5,
+        DASH => 4,
+        PIPE => 3,
+        DIAG => 2,
+        GAID => 1,
+        _ => 0,
+    }
+}
+
+fn exists(buffer: &Vec<Vec<char>>, x: usize, y: usize) -> bool {
+    get(buffer, x, y).unwrap_or(SP) != SP
+}
+
+fn getv(buffer: &Vec<Vec<char>>, pos: Vec2) -> Option<char> {
+    get(buffer, pos.x, pos.y)
+}
+
+fn get(buffer: &Vec<Vec<char>>, x: usize, y: usize) -> Option<char> {
+    buffer.get(y).and_then(|v| v.get(x)).copied()
 }
 
 type IVec2 = XY<isize>;

@@ -65,56 +65,31 @@ fn main() -> MainResult<()> {
                 .leaf("Debug", Cursive::toggle_debug_console)
                 .leaf("Quit", Cursive::quit),
         )
+        .add_delimiter()
+        .add_leaf("Box", set_tool::<BoxTool, _>(|_| ()))
         .add_subtree(
-            "Tools",
+            "Line",
             MenuTree::new()
-                .leaf("Box", set_tool::<BoxTool>())
-                .leaf("Line", set_tool::<LineTool>()),
-        )
-        .add_subtree(
-            "Settings",
-            MenuTree::new()
-                .subtree(
-                    "Line Mode",
-                    MenuTree::new()
-                        .leaf(
-                            "Direct",
-                            setting(|o| {
-                                o.line_direct = true;
-                            }),
-                        )
-                        .leaf(
-                            "Snap 45",
-                            setting(|o| {
-                                o.line_direct = false;
-                                o.line_snap45 = true;
-                            }),
-                        )
-                        .leaf(
-                            "Snap 90",
-                            setting(|o| {
-                                o.line_direct = false;
-                                o.line_snap45 = false;
-                            }),
-                        ),
-                )
-                .subtree(
-                    "Text Mode",
-                    MenuTree::new()
-                        .leaf("Normal", |_| ())
-                        .leaf("Banner", |_| ()),
-                )
-                .subtree(
-                    "Overlap Mode",
-                    MenuTree::new()
-                        .leaf("Prefer '-'", setting(|o| o.overlap_h = Some(true)))
-                        .leaf("Prefer '|'", setting(|o| o.overlap_h = Some(false)))
-                        .leaf("Latest", setting(|o| o.overlap_h = None)),
+                .leaf("Snap 45", set_tool::<LineTool, _>(|o| o.line_snap45 = true))
+                .leaf(
+                    "Snap 90",
+                    set_tool::<LineTool, _>(|o| o.line_snap45 = false),
                 ),
         )
-        .add_leaf("Help", |_| ())
+        .add_subtree(
+            "Arrow",
+            MenuTree::new()
+                .leaf(
+                    "Snap 45",
+                    set_tool::<ArrowTool, _>(|o| o.line_snap45 = true),
+                )
+                .leaf(
+                    "Snap 90",
+                    set_tool::<ArrowTool, _>(|o| o.line_snap45 = false),
+                ),
+        )
         .add_delimiter()
-        .add_leaf(format!("{}", editor.tool), |_| ());
+        .add_leaf(format!("{{ {} }}", editor.tool), |_| ());
 
     siv.set_autohide_menu(false);
     siv.add_global_callback('`', Cursive::toggle_debug_console);
@@ -138,29 +113,19 @@ fn main() -> MainResult<()> {
     Ok(())
 }
 
-const ACTIVE_TOOL: usize = 5;
+fn set_tool<T, S>(set: S) -> impl Fn(&mut Cursive) + 'static
+where
+    T: Tool + Default + 'static,
+    S: Fn(&mut Options) + 'static,
+{
+    const ACTIVE_TOOL: usize = 6;
 
-fn set_tool<T: Tool + Default + 'static>() -> impl Fn(&mut Cursive) + 'static {
-    move |siv| {
-        let editor = get_editor(siv);
-        editor.tool = Box::new(T::default());
-        editor.tool.load_opts(&editor.opts);
-        let tool = format!("{}", editor.tool);
-        drop(editor);
-
-        let menu = siv.menubar();
-        menu.remove(ACTIVE_TOOL);
-        menu.insert_leaf(ACTIVE_TOOL, tool, |_| ());
-    }
-}
-
-fn setting<S: Fn(&mut Options) + 'static>(set: S) -> impl Fn(&mut Cursive) + 'static {
     move |siv| {
         let editor = get_editor(siv);
         set(&mut editor.opts);
+        editor.tool = Box::new(T::default());
         editor.tool.load_opts(&editor.opts);
-
-        let tool = format!("{}", editor.tool);
+        let tool = format!("{{ {} }}", editor.tool);
         drop(editor);
 
         let menu = siv.menubar();
@@ -313,21 +278,10 @@ fn editor_callback(scroll_view: &mut ScrollView<TextView>, event: &Event) -> Opt
     version_message = "Prints version information."
 )]
 pub struct Options {
-    #[structopt(skip = true)]
-    // true : lines are interpolated as one direct segment
-    // false: lines are snapped to two segments joined by a bend
-    pub line_direct: bool,
-
-    // true : snapped lines bend 45 degrees
-    // false: snapped lines bend 90 degrees
+    // true : lines bend 45 degrees
+    // false: lines bend 90 degrees
     #[structopt(skip = false)]
     pub line_snap45: bool,
-
-    // Some(true) : prefer -
-    // Some(false): prefer |
-    // None       : use latest
-    #[structopt(skip = None)]
-    pub overlap_h: Option<bool>,
 
     /// Text file to operate on.
     #[structopt(name = "FILE")]
@@ -337,7 +291,17 @@ pub struct Options {
 // TODO: undo/redo
 // TODO: new, open, save, save as
 // TODO: help window
-// TODO: make Editor implement View for efficiency
+// TODO: make Editor implement View for efficiency and easier styling
+// TODO: highlight modifications while they're happening
+// TODO: implement arrow tool
+// TODO: implement text tool
+// TODO: implement resize tool
+// TODO: implement select tool
+// TODO: implement unicode mode
+// TODO: implement clickable buttons for each tool
+// TODO: implement separate tool-settings bar
+// TODO: experimental: implement routed lines, with as many bends as necessary to avoid
+//       obstacles
 struct Editor {
     opts: Options,
     file: File,
