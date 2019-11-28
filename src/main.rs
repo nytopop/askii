@@ -2,8 +2,6 @@
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
-#![allow(dead_code, unused_variables, unused_imports)]
-
 extern crate cursive;
 extern crate lazy_static;
 extern crate line_drawing;
@@ -11,45 +9,33 @@ extern crate log;
 extern crate parking_lot;
 extern crate structopt;
 
-mod tools;
+pub(crate) mod editor;
+pub(crate) mod tools;
 
+use editor::*;
 use tools::*;
 
 use cursive::{
-    direction::Orientation,
-    event,
     event::{Callback, Event, EventResult, EventTrigger, Key, MouseButton, MouseEvent},
     logger,
     menu::MenuTree,
-    theme::Effect,
     view::scroll::Scroller,
-    views::{
-        Canvas, Checkbox, Dialog, EditView, IdView, LinearLayout, OnEventView, Panel, ScrollView,
-        TextArea, TextContent, TextView, ViewRef,
-    },
-    Cursive, Rect, Vec2, With,
+    views::{Dialog, IdView, OnEventView, Panel, ScrollView, ViewRef},
+    Cursive, Vec2,
 };
 use lazy_static::lazy_static;
-use log::{debug, error, info, trace, warn};
+use log::info;
 use parking_lot::Mutex;
-use std::{
-    error::Error,
-    fs::{File, OpenOptions},
-    io::{self, BufRead, BufReader, Seek, SeekFrom},
-    iter,
-    ops::RangeInclusive,
-    path::{Path, PathBuf},
-};
+use std::error::Error;
 use structopt::StructOpt;
 
 type MainResult<T> = Result<T, Box<dyn Error>>;
 
 fn main() -> MainResult<()> {
+    logger::init();
     let opts = Options::from_args();
     info!("{:?}", opts);
-
     let editor = Editor::open(opts)?;
-    logger::init();
 
     let mut siv = Cursive::default();
 
@@ -90,7 +76,7 @@ fn main() -> MainResult<()> {
         )
         .add_leaf("Text", set_tool::<TextTool, _>(|_| ()))
         .add_delimiter()
-        .add_leaf(format!("{{ {} }}", editor.tool), |_| ());
+        .add_leaf(editor.active_tool(), |_| ());
 
     siv.set_autohide_menu(false);
     siv.add_global_callback('`', Cursive::toggle_debug_console);
@@ -99,15 +85,10 @@ fn main() -> MainResult<()> {
 
     let editor_layer = Panel::new(IdView::new(
         "editor",
-        OnEventView::new(
-            ScrollView::new(TextView::new_with_content(editor.content()).no_wrap())
-                .scroll_x(true)
-                .scroll_y(true),
-        )
-        .on_pre_event_inner(EventTrigger::mouse(), editor_callback),
+        OnEventView::new(ScrollView::new(editor).scroll_x(true).scroll_y(true))
+            .on_pre_event_inner(EventTrigger::mouse(), editor_callback),
     ));
     siv.add_fullscreen_layer(editor_layer);
-    siv.set_user_data(editor);
 
     siv.run();
 
@@ -120,12 +101,13 @@ where
     S: Fn(&mut Options) + 'static,
 {
     move |siv| {
-        let editor = get_editor(siv);
-        set(&mut editor.opts);
-        editor.tool = Box::new(T::default());
-        editor.tool.load_opts(&editor.opts);
-        let tool = format!("{{ {} }}", editor.tool);
-        drop(editor);
+        let tool = {
+            let mut view = get_editor_view(siv);
+            let editor = view.get_inner_mut().get_inner_mut();
+            set(editor.opts());
+            editor.set_tool(T::default());
+            editor.active_tool()
+        };
 
         let menu = siv.menubar();
         let idx = menu.len() - 1;
@@ -134,12 +116,8 @@ where
     }
 }
 
-fn get_editor(siv: &mut Cursive) -> &mut Editor {
-    siv.user_data::<Editor>().unwrap()
-}
-
-fn get_editor_view(siv: &mut Cursive) -> ViewRef<OnEventView<ScrollView<TextView>>> {
-    siv.find_id::<OnEventView<ScrollView<TextView>>>("editor")
+fn get_editor_view(siv: &mut Cursive) -> ViewRef<OnEventView<ScrollView<Editor>>> {
+    siv.find_id::<OnEventView<ScrollView<Editor>>>("editor")
         .unwrap()
 }
 
@@ -160,7 +138,7 @@ lazy_static! {
     static ref RPOINTER: Mutex<Option<Vec2>> = Mutex::new(None);
 }
 
-fn editor_callback(scroll_view: &mut ScrollView<TextView>, event: &Event) -> Option<EventResult> {
+fn editor_callback(scroll_view: &mut ScrollView<Editor>, event: &Event) -> Option<EventResult> {
     let (offset, pos, event) = match *event {
         Event::Mouse {
             offset,
@@ -198,10 +176,7 @@ fn editor_callback(scroll_view: &mut ScrollView<TextView>, event: &Event) -> Opt
                 .lock()
                 .take()
                 .map(|pos| on_scrollbar(scroll_view, offset, pos))
-                .unwrap_or(false) =>
-        {
-            return None;
-        }
+                .unwrap_or(false) => {}
 
         WheelUp | WheelDown => return None,
 
@@ -212,6 +187,10 @@ fn editor_callback(scroll_view: &mut ScrollView<TextView>, event: &Event) -> Opt
 
     let content_pos = pos.saturating_sub(offset) + viewport.top_left();
 
+    // TODO: should be able to remove all this indirection now that the view gives us a
+    // reference to the editor
+    //
+    // also get_editor_view isn't necessary, so neither is the IdView
     consume_event(move |siv| match event {
         Press(Right) => {
             *RPOINTER.lock() = Some(pos);
@@ -249,130 +228,23 @@ fn editor_callback(scroll_view: &mut ScrollView<TextView>, event: &Event) -> Opt
         }
 
         Press(Left) => {
-            let editor = get_editor(siv);
-            let save = editor.tool.on_press(content_pos);
-            editor.render(save);
+            let mut view = get_editor_view(siv);
+            let editor = view.get_inner_mut().get_inner_mut();
+            editor.press(content_pos);
         }
 
         Hold(Left) => {
-            let editor = get_editor(siv);
-            let save = editor.tool.on_hold(content_pos);
-            editor.render(save);
+            let mut view = get_editor_view(siv);
+            let editor = view.get_inner_mut().get_inner_mut();
+            editor.hold(content_pos);
         }
 
         Release(Left) => {
-            let editor = get_editor(siv);
-            let save = editor.tool.on_release(content_pos);
-            editor.render(save);
-            editor.tool.reset();
+            let mut view = get_editor_view(siv);
+            let editor = view.get_inner_mut().get_inner_mut();
+            editor.release(content_pos);
         }
 
         _ => {}
     })
-}
-
-#[derive(Debug, StructOpt)]
-#[structopt(
-    author = "Made with love by nytopop <ericizoita@gmail.com>.",
-    help_message = "Prints help information.",
-    version_message = "Prints version information."
-)]
-pub struct Options {
-    // true : lines bend 45 degrees
-    // false: lines bend 90 degrees
-    #[structopt(skip = false)]
-    pub line_snap45: bool,
-
-    /// Text file to operate on.
-    #[structopt(name = "FILE")]
-    pub file: PathBuf,
-}
-
-// TODO: undo/redo
-// TODO: new, open, save, save as
-// TODO: help window
-// TODO: make Editor implement View for efficiency and easier styling
-// TODO: highlight modifications while they're happening
-// TODO: implement arrow tool
-// TODO: implement text tool
-// TODO: implement resize tool
-// TODO: implement select tool
-// TODO: implement unicode mode
-// TODO: implement clickable buttons for each tool
-// TODO: implement separate tool-settings bar
-// TODO: experimental: implement routed lines, with as many bends as necessary to avoid
-//       obstacles
-struct Editor {
-    opts: Options,
-    file: File,
-    buffer: Vec<Vec<char>>,
-    render: TextContent,
-    tool: Box<dyn Tool>,
-}
-
-impl Editor {
-    fn open(opts: Options) -> io::Result<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(&opts.file)?;
-
-        let mut editor = Self {
-            opts,
-            file,
-            buffer: vec![],
-            render: TextContent::new(""),
-            tool: Box::new(BoxTool::default()),
-        };
-
-        editor.load_from_file()?;
-
-        Ok(editor)
-    }
-
-    fn load_from_file(&mut self) -> io::Result<()> {
-        self.file.seek(SeekFrom::Start(0))?;
-
-        self.buffer = BufReader::new(&mut self.file)
-            .lines()
-            .map(|lr| lr.map(|s| s.chars().collect()))
-            .collect::<io::Result<_>>()?;
-
-        let rendered: String = self
-            .buffer
-            .iter()
-            .flat_map(|v| v.iter().chain(iter::once(&'\n')))
-            .collect();
-
-        self.render.set_content(rendered);
-
-        Ok(())
-    }
-
-    fn content(&self) -> TextContent {
-        self.render.clone()
-    }
-
-    fn render(&mut self, save: bool) {
-        let mut preview_buffer;
-
-        let buffer = if save {
-            &mut self.buffer
-        } else {
-            preview_buffer = self.buffer.clone();
-            &mut preview_buffer
-        };
-
-        if !self.tool.render_to(buffer) {
-            return;
-        }
-
-        let rendered: String = buffer
-            .iter()
-            .flat_map(|v| v.iter().chain(iter::once(&'\n')))
-            .collect();
-
-        self.render.set_content(rendered);
-    }
 }
