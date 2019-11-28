@@ -50,20 +50,18 @@ pub struct Editor {
 }
 
 impl View for Editor {
-    fn draw(&self, printer: &Printer<'_, '_>) {
+    fn draw(&self, p: &Printer<'_, '_>) {
         let buf = &mut [0; 4];
+        let style = ColorStyle::highlight_inactive();
 
-        for (hl, Cell { pos, c }) in self
-            .buffer
-            .iter(printer.content_offset, printer.size)
-            .map(Char::into_hl_pair)
-        {
-            let s = c.encode_utf8(buf);
-
-            if hl {
-                printer.with_color(ColorStyle::highlight_inactive(), |p| p.print(pos, s));
-            } else {
-                printer.print(pos, s);
+        for c in self.buffer.iter(p.content_offset, p.size) {
+            match c {
+                Char::Clean(Cell { pos, c }) => {
+                    p.print(pos, c.encode_utf8(buf));
+                }
+                Char::Dirty(Cell { pos, c }) => {
+                    p.with_color(style, |p| p.print(pos, c.encode_utf8(buf)));
+                }
             }
         }
     }
@@ -188,15 +186,6 @@ enum Char {
     Dirty(Cell),
 }
 
-impl Char {
-    fn into_hl_pair(self) -> (bool, Cell) {
-        match self {
-            Char::Clean(cell) => (false, cell),
-            Char::Dirty(cell) => (true, cell),
-        }
-    }
-}
-
 impl FromIterator<Vec<char>> for Buffer {
     fn from_iter<T: IntoIterator<Item = Vec<char>>>(iter: T) -> Self {
         let chars = iter.into_iter().collect();
@@ -206,6 +195,7 @@ impl FromIterator<Vec<char>> for Buffer {
 }
 
 impl Buffer {
+    /// Returns the size of a viewport required to display all content within the buffer.
     fn bounds(&self) -> Vec2 {
         let x = self.chars.iter().map(Vec::len).max().unwrap_or(0);
         let y = self.chars.len();
@@ -227,6 +217,8 @@ impl Buffer {
         Vec2::new(cmp::max(x, ex), cmp::max(y, ey))
     }
 
+    /// Returns an iterator of all characters within the viewport formed by `offset` and
+    /// `size`.
     fn iter<'a>(&'a self, offset: Vec2, size: Vec2) -> impl Iterator<Item = Char> + 'a {
         self.chars
             .iter()
