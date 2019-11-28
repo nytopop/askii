@@ -3,7 +3,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 use super::tools::*;
-use cursive::{theme::ColorStyle, view::View, Printer, Rect, Vec2, XY};
+use cursive::{theme::ColorStyle, view::View, Printer, Vec2, XY};
 use line_drawing::Bresenham;
 use std::{
     cmp,
@@ -53,15 +53,10 @@ impl View for Editor {
     fn draw(&self, printer: &Printer<'_, '_>) {
         let buf = &mut [0; 4];
 
-        let tl = printer.content_offset;
-        let br = printer.content_offset + printer.size;
-        let area = Rect::from_corners(tl, br);
-
         for (hl, Cell { pos, c }) in self
             .buffer
-            .iter()
+            .iter(printer.content_offset, printer.size)
             .map(Char::into_hl_pair)
-            .filter(|(_, Cell { pos, .. })| area.contains(*pos))
         {
             let s = c.encode_utf8(buf);
 
@@ -232,14 +227,18 @@ impl Buffer {
         Vec2::new(cmp::max(x, ex), cmp::max(y, ey))
     }
 
-    fn iter<'a>(&'a self) -> impl Iterator<Item = Char> + 'a {
+    fn iter<'a>(&'a self, offset: Vec2, size: Vec2) -> impl Iterator<Item = Char> + 'a {
         self.chars
             .iter()
             .enumerate()
-            .flat_map(|(y, xs)| {
+            .skip(offset.y)
+            .take(size.y)
+            .flat_map(move |(y, xs)| {
                 xs.iter()
                     .copied()
                     .enumerate()
+                    .skip(offset.x)
+                    .take(size.x)
                     .map(move |(x, c)| (Vec2::new(x, y), c))
                     .map(|(pos, c)| Cell { pos, c })
                     .map(Char::Clean)
