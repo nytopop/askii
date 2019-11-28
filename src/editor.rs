@@ -9,7 +9,7 @@ use std::{
     cmp,
     fs::{File, OpenOptions},
     io::{self, BufRead, BufReader, Seek, SeekFrom},
-    iter::{self, FromIterator},
+    iter::FromIterator,
     path::PathBuf,
 };
 use structopt::StructOpt;
@@ -264,14 +264,25 @@ impl Buffer {
 
     /// Set the cell at `pos` to `c`.
     pub fn setv(&mut self, force: bool, pos: Vec2, c: char) {
-        let existing = self
-            .iter_at(pos)
-            .map(|Cell { c, .. }| c)
-            .map(precedence)
-            .max()
-            .unwrap_or(0);
+        if force {
+            self.edits.push(Cell { pos, c });
+            return;
+        }
 
-        if force || precedence(c) >= existing {
+        let max_prec = precedence(c);
+
+        let mut exists = false;
+        if self.chars.len() > pos.y && self.chars[pos.y].len() > pos.x {
+            exists |= precedence(self.chars[pos.y][pos.x]) > max_prec;
+        }
+
+        exists |= self
+            .edits
+            .iter()
+            .filter(|cell| cell.pos == pos)
+            .any(|cell| precedence(cell.c) > max_prec);
+
+        if !exists {
             self.edits.push(Cell { pos, c });
         }
     }
@@ -279,22 +290,6 @@ impl Buffer {
     /// Set the cell at `(x, y)` to `c`.
     pub fn set(&mut self, force: bool, x: usize, y: usize, c: char) {
         self.setv(force, Vec2::new(x, y), c)
-    }
-
-    fn iter_at<'a>(&'a self, pos: Vec2) -> Box<dyn Iterator<Item = Cell> + 'a> {
-        let tail = self.edits.iter().filter(move |c| c.pos == pos).copied();
-
-        if self.chars.len() > pos.y && self.chars[pos.y].len() > pos.x {
-            Box::new(
-                iter::once(Cell {
-                    pos,
-                    c: self.chars[pos.y][pos.x],
-                })
-                .chain(tail),
-            )
-        } else {
-            Box::new(tail)
-        }
     }
 
     /// Flush any pending edits to the primary buffer, allocating as necessary.
