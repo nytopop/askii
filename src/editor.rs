@@ -3,7 +3,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 use super::tools::*;
-use cursive::{theme::ColorStyle, view::View, Printer, Vec2, XY};
+use cursive::{theme::ColorStyle, view::View, Printer, Rect, Vec2, XY};
 use line_drawing::Bresenham;
 use std::{
     cmp::max,
@@ -241,6 +241,8 @@ impl Buffer {
     /// Returns an iterator of all characters within the viewport formed by `offset` and
     /// `size`.
     fn iter<'a>(&'a self, offset: Vec2, size: Vec2) -> impl Iterator<Item = Char> + 'a {
+        let area = Rect::from_corners(offset, offset + size);
+
         self.chars
             .iter()
             .enumerate()
@@ -256,7 +258,13 @@ impl Buffer {
                     .map(|(pos, c)| Cell { pos, c })
                     .map(Char::Clean)
             })
-            .chain(self.edits.iter().copied().map(Char::Dirty))
+            .chain(
+                self.edits
+                    .iter()
+                    .copied()
+                    .filter(move |Cell { pos, .. }| area.contains(*pos))
+                    .map(Char::Dirty),
+            )
     }
 
     /// Get the cell at `pos`, if it exists.
