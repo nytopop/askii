@@ -282,19 +282,20 @@ impl Buffer {
         }
 
         let max_prec = precedence(c);
+        let overrides = |_c| _c == c || precedence(_c) > max_prec;
 
-        let mut exists = false;
+        let mut overridden = false;
         if self.chars.len() > pos.y && self.chars[pos.y].len() > pos.x {
-            exists |= precedence(self.chars[pos.y][pos.x]) > max_prec;
+            overridden |= overrides(self.chars[pos.y][pos.x]);
         }
 
-        exists |= self
+        overridden |= self
             .edits
             .iter()
             .filter(|cell| cell.pos == pos)
-            .any(|cell| precedence(cell.c) > max_prec);
+            .any(|cell| overrides(cell.c));
 
-        if !exists {
+        if !overridden {
             self.edits.push(Cell { pos, c });
         }
     }
