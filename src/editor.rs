@@ -66,12 +66,12 @@ impl View for Editor {
         }
     }
 
-    fn required_size(&mut self, _size: Vec2) -> Vec2 {
+    fn required_size(&mut self, size: Vec2) -> Vec2 {
         let buf_bounds = self.buffer.bounds();
 
         Vec2 {
-            x: max(buf_bounds.x, self.bounds.x),
-            y: max(buf_bounds.y, self.bounds.y),
+            x: max(size.x, max(buf_bounds.x, self.bounds.x)),
+            y: max(size.y, max(buf_bounds.y, self.bounds.y)),
         }
     }
 }
@@ -216,7 +216,7 @@ impl FromIterator<Vec<char>> for Buffer {
 }
 
 impl Buffer {
-    /// Returns the size of a viewport required to display all content within the buffer.
+    /// Returns the viewport size required to display all content within the buffer.
     fn bounds(&self) -> Vec2 {
         let x = self.chars.iter().map(Vec::len).max().unwrap_or(0);
         let y = self.chars.len();
