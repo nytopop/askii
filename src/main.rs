@@ -20,7 +20,7 @@ use cursive::{
     logger,
     menu::MenuTree,
     view::scroll::Scroller,
-    views::{Dialog, IdView, OnEventView, Panel, ScrollView, ViewRef},
+    views::{Dialog, IdView, OnEventView, Panel, ScrollView},
     Cursive, Vec2,
 };
 use lazy_static::lazy_static;
@@ -89,7 +89,7 @@ fn main() -> MainResult<()> {
     let editor_layer = Panel::new(IdView::new(
         "editor",
         OnEventView::new(ScrollView::new(editor).scroll_x(true).scroll_y(true))
-            .on_pre_event_inner(EventTrigger::mouse(), editor_callback),
+            .on_pre_event_inner(EventTrigger::any(), editor_callback),
     ));
     siv.add_fullscreen_layer(editor_layer);
 
@@ -105,8 +105,11 @@ where
 {
     move |siv| {
         let tool = {
-            let mut view = get_editor_view(siv);
-            let editor = view.get_inner_mut().get_inner_mut();
+            let mut view = siv
+                .find_id::<OnEventView<ScrollView<Editor>>>("editor")
+                .unwrap();
+            let editor = get_editor(view.get_inner_mut());
+
             set(editor.opts());
             editor.set_tool(T::default());
             editor.active_tool()
@@ -118,9 +121,8 @@ where
     }
 }
 
-fn get_editor_view(siv: &mut Cursive) -> ViewRef<OnEventView<ScrollView<Editor>>> {
-    siv.find_id::<OnEventView<ScrollView<Editor>>>("editor")
-        .unwrap()
+fn get_editor(scroll_view: &mut ScrollView<Editor>) -> &mut Editor {
+    scroll_view.get_inner_mut()
 }
 
 fn on_scrollbar<S: Scroller>(scroll: &S, offset: Vec2, pos: Vec2) -> bool {
@@ -136,17 +138,42 @@ lazy_static! {
     static ref RPOINTER: Mutex<Option<Vec2>> = Mutex::new(None);
 }
 
+const CONSUMED: Option<EventResult> = Some(EventResult::Consumed(None));
+
 fn editor_callback(scroll_view: &mut ScrollView<Editor>, event: &Event) -> Option<EventResult> {
-    let (offset, pos, event) = match *event {
+    match event {
         Event::Mouse {
             offset,
             position,
             event,
-        } => (offset, position, event),
+        } => handle_mouse(scroll_view, *offset, *position, *event),
 
-        _ => return None,
-    };
+        Event::Char('u') => {
+            get_editor(scroll_view).undo();
+            CONSUMED
+        }
 
+        Event::Char('r') => {
+            get_editor(scroll_view).redo();
+            CONSUMED
+        }
+
+        // save
+        Event::CtrlChar('s') => None,
+
+        // new
+        Event::CtrlChar('n') => None,
+
+        _ => None,
+    }
+}
+
+fn handle_mouse(
+    scroll_view: &mut ScrollView<Editor>,
+    offset: Vec2,
+    pos: Vec2,
+    event: MouseEvent,
+) -> Option<EventResult> {
     use MouseButton::*;
     use MouseEvent::*;
 
@@ -182,16 +209,17 @@ fn editor_callback(scroll_view: &mut ScrollView<Editor>, event: &Event) -> Optio
 
         Press(Left) => {
             *LAST_LPRESS.lock() = Some(pos);
-            scroll_view.get_inner_mut().press(content_pos);
-            Some(EventResult::Consumed(None))
+            get_editor(scroll_view).press(content_pos);
+            CONSUMED
         }
 
+        // BUG: this scrolls even if the tool isn't a drag type
         Hold(Left) => {
-            scroll_view.get_inner_mut().hold(content_pos);
+            let editor = get_editor(scroll_view);
+            editor.hold(content_pos);
 
             let pos = pos - offset;
             let bounds = viewport.bottom_right() - viewport.top_left();
-            let editor = scroll_view.get_inner_mut();
 
             let mut offset = viewport.top_left();
             if pos.x > bounds.x {
@@ -209,28 +237,26 @@ fn editor_callback(scroll_view: &mut ScrollView<Editor>, event: &Event) -> Optio
             }
 
             scroll_view.set_offset(offset);
-
-            Some(EventResult::Consumed(None))
+            CONSUMED
         }
 
         Release(Left) => {
-            scroll_view.get_inner_mut().release(content_pos);
-            Some(EventResult::Consumed(None))
+            get_editor(scroll_view).release(content_pos);
+            CONSUMED
         }
 
         Press(Right) => {
             *RPOINTER.lock() = Some(pos);
-            Some(EventResult::Consumed(None))
+            CONSUMED
         }
 
         Hold(Right) if RPOINTER.lock().is_none() => {
             *RPOINTER.lock() = Some(pos);
-            Some(EventResult::Consumed(None))
+            CONSUMED
         }
 
         Hold(Right) => {
             let Vec2 { x, y } = RPOINTER.lock().replace(pos).unwrap();
-
             let mut offset = viewport.top_left();
 
             if pos.x > x {
@@ -239,7 +265,7 @@ fn editor_callback(scroll_view: &mut ScrollView<Editor>, event: &Event) -> Optio
                 offset.x = offset.x.saturating_add(x - pos.x);
 
                 if within(1, viewport.right(), scroll_view.inner_size().x) {
-                    scroll_view.get_inner_mut().bounds().x += x - pos.x;
+                    get_editor(scroll_view).bounds().x += x - pos.x;
                 }
             }
 
@@ -249,17 +275,17 @@ fn editor_callback(scroll_view: &mut ScrollView<Editor>, event: &Event) -> Optio
                 offset.y = offset.y.saturating_add(y - pos.y);
 
                 if within(1, viewport.bottom(), scroll_view.inner_size().y) {
-                    scroll_view.get_inner_mut().bounds().y += y - pos.y;
+                    get_editor(scroll_view).bounds().y += y - pos.y;
                 }
             }
 
             scroll_view.set_offset(offset);
-            Some(EventResult::Consumed(None))
+            CONSUMED
         }
 
         Release(Right) => {
             *RPOINTER.lock() = None;
-            Some(EventResult::Consumed(None))
+            CONSUMED
         }
 
         _ => None,

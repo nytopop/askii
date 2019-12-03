@@ -10,6 +10,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{self, BufRead, BufReader, Seek, SeekFrom},
     iter::FromIterator,
+    mem,
     path::PathBuf,
 };
 use structopt::StructOpt;
@@ -44,7 +45,11 @@ pub struct Options {
 pub struct Editor {
     opts: Options,
     file: File,
+
     buffer: Buffer,
+    history: Vec<Buffer>,
+    undone: Vec<Buffer>,
+
     tool: Box<dyn Tool>,
     bounds: Vec2,
 }
@@ -88,7 +93,11 @@ impl Editor {
         let mut editor = Self {
             opts,
             file,
+
             buffer: Buffer::default(),
+            history: vec![],
+            undone: vec![],
+
             tool: Box::new(BoxTool::default()),
             bounds: Vec2::new(0, 0),
         };
@@ -108,6 +117,22 @@ impl Editor {
             .collect::<io::Result<_>>()?;
 
         Ok(())
+    }
+
+    /// Undo the last buffer modification.
+    pub fn undo(&mut self) {
+        self.history
+            .pop()
+            .map(|buffer| mem::replace(&mut self.buffer, buffer))
+            .map(|buffer| self.undone.push(buffer));
+    }
+
+    /// Redo the last undo.
+    pub fn redo(&mut self) {
+        self.undone
+            .pop()
+            .map(|buffer| mem::replace(&mut self.buffer, buffer))
+            .map(|buffer| self.history.push(buffer));
     }
 
     /// Returns a mutable reference to the canvas bounds.
@@ -159,6 +184,10 @@ impl Editor {
 
     fn apply_toolstate(&mut self, keep_changes: bool) {
         self.buffer.discard_edits();
+
+        if keep_changes {
+            self.history.push(self.buffer.clone());
+        }
 
         self.tool.render_to(&mut self.buffer);
 
