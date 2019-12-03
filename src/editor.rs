@@ -6,7 +6,7 @@ use super::tools::*;
 use cursive::{theme::ColorStyle, view::View, Printer, Vec2, XY};
 use line_drawing::Bresenham;
 use std::{
-    cmp,
+    cmp::max,
     fs::{File, OpenOptions},
     io::{self, BufRead, BufReader, Seek, SeekFrom},
     iter::FromIterator,
@@ -41,12 +41,12 @@ pub struct Options {
 // TODO: unicode mode
 // TODO: diamond tool
 // TODO: hexagon tool
-// TODO: scroll when a tool goes offscreen, like w/ rpointer
 pub struct Editor {
     opts: Options,
     file: File,
     buffer: Buffer,
     tool: Box<dyn Tool>,
+    bounds: Vec2,
 }
 
 impl View for Editor {
@@ -67,7 +67,12 @@ impl View for Editor {
     }
 
     fn required_size(&mut self, _size: Vec2) -> Vec2 {
-        self.buffer.bounds()
+        let buf_bounds = self.buffer.bounds();
+
+        Vec2 {
+            x: max(buf_bounds.x, self.bounds.x),
+            y: max(buf_bounds.y, self.bounds.y),
+        }
     }
 }
 
@@ -85,6 +90,7 @@ impl Editor {
             file,
             buffer: Buffer::default(),
             tool: Box::new(BoxTool::default()),
+            bounds: Vec2::new(0, 0),
         };
 
         editor.load_from_file()?;
@@ -102,6 +108,21 @@ impl Editor {
             .collect::<io::Result<_>>()?;
 
         Ok(())
+    }
+
+    /// Returns a mutable reference to the canvas bounds.
+    pub fn bounds(&mut self) -> &mut Vec2 {
+        &mut self.bounds
+    }
+
+    /// Set the canvas x bound to the provided value.
+    pub fn set_x_bound(&mut self, x: usize) {
+        self.bounds.x = max(x, self.bounds.x);
+    }
+
+    /// Set the canvas y bound to the provided value.
+    pub fn set_y_bound(&mut self, y: usize) {
+        self.bounds.y = max(y, self.bounds.y);
     }
 
     /// Returns a mutable reference to the loaded options.
@@ -214,7 +235,7 @@ impl Buffer {
             .max()
             .unwrap_or(0);
 
-        Vec2::new(cmp::max(x, ex), cmp::max(y, ey))
+        Vec2::new(max(x, ex), max(y, ey))
     }
 
     /// Returns an iterator of all characters within the viewport formed by `offset` and

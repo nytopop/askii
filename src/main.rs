@@ -16,7 +16,7 @@ use editor::*;
 use tools::*;
 
 use cursive::{
-    event::{Callback, Event, EventResult, EventTrigger, Key, MouseButton, MouseEvent},
+    event::{Event, EventResult, EventTrigger, Key, MouseButton, MouseEvent},
     logger,
     menu::MenuTree,
     view::scroll::Scroller,
@@ -129,10 +129,6 @@ fn on_scrollbar<S: Scroller>(scroll: &S, offset: Vec2, pos: Vec2) -> bool {
     (min.x..=max.x).contains(&pos.x) || (min.y..=max.y).contains(&pos.y)
 }
 
-fn consume_event<F: Fn(&mut Cursive) + 'static>(f: F) -> Option<EventResult> {
-    Some(EventResult::Consumed(Some(Callback::from_fn(f))))
-}
-
 lazy_static! {
     static ref LAST_LPRESS: Mutex<Option<Vec2>> = Mutex::new(None);
     static ref RPOINTER: Mutex<Option<Vec2>> = Mutex::new(None);
@@ -152,14 +148,13 @@ fn editor_callback(scroll_view: &mut ScrollView<Editor>, event: &Event) -> Optio
     use MouseButton::*;
     use MouseEvent::*;
 
+    let viewport = scroll_view.content_viewport();
+    let content_pos = pos.saturating_sub(offset) + viewport.top_left();
+
     match event {
         Press(Left) if on_scrollbar(scroll_view, offset, pos) => {
             *LAST_LPRESS.lock() = Some(pos);
-            return None;
-        }
-
-        Press(Left) => {
-            *LAST_LPRESS.lock() = Some(pos);
+            None
         }
 
         Hold(Left)
@@ -168,7 +163,7 @@ fn editor_callback(scroll_view: &mut ScrollView<Editor>, event: &Event) -> Optio
                 .map(|pos| on_scrollbar(scroll_view, offset, pos))
                 .unwrap_or(false) =>
         {
-            return None;
+            None
         }
 
         Release(Left)
@@ -176,75 +171,99 @@ fn editor_callback(scroll_view: &mut ScrollView<Editor>, event: &Event) -> Optio
                 .lock()
                 .take()
                 .map(|pos| on_scrollbar(scroll_view, offset, pos))
-                .unwrap_or(false) => {}
+                .unwrap_or(false) =>
+        {
+            None
+        }
 
-        WheelUp | WheelDown => return None,
+        WheelUp | WheelDown => None,
 
-        _ => {}
-    }
+        Press(Left) => {
+            *LAST_LPRESS.lock() = Some(pos);
+            scroll_view.get_inner_mut().press(content_pos);
+            Some(EventResult::Consumed(None))
+        }
 
-    let viewport = scroll_view.content_viewport();
+        Hold(Left) => {
+            scroll_view.get_inner_mut().hold(content_pos);
 
-    let content_pos = pos.saturating_sub(offset) + viewport.top_left();
+            let pos = pos - offset;
+            let bounds = viewport.bottom_right() - viewport.top_left();
+            let editor = scroll_view.get_inner_mut();
 
-    // TODO: should be able to remove all this indirection now that the view gives us a
-    // reference to the editor
-    //
-    // also get_editor_view isn't necessary, so neither is the IdView
-    consume_event(move |siv| match event {
+            let mut offset = viewport.top_left();
+            if pos.x > bounds.x {
+                offset.x = offset.x.saturating_add(3);
+                editor.set_x_bound(offset.x + bounds.x);
+            } else if pos.x == 0 {
+                offset.x = offset.x.saturating_sub(3);
+            }
+
+            if pos.y > bounds.y {
+                offset.y = offset.y.saturating_add(3);
+                editor.set_y_bound(offset.y + bounds.y);
+            } else if pos.y == 0 {
+                offset.y = offset.y.saturating_sub(3);
+            }
+
+            scroll_view.set_offset(offset);
+
+            Some(EventResult::Consumed(None))
+        }
+
+        Release(Left) => {
+            scroll_view.get_inner_mut().release(content_pos);
+            Some(EventResult::Consumed(None))
+        }
+
         Press(Right) => {
             *RPOINTER.lock() = Some(pos);
+            Some(EventResult::Consumed(None))
         }
 
         Hold(Right) if RPOINTER.lock().is_none() => {
             *RPOINTER.lock() = Some(pos);
+            Some(EventResult::Consumed(None))
         }
 
         Hold(Right) => {
             let Vec2 { x, y } = RPOINTER.lock().replace(pos).unwrap();
 
-            let mut view = get_editor_view(siv);
-            let scroll_view = view.get_inner_mut();
-
-            let mut offset = scroll_view.content_viewport().top_left();
+            let mut offset = viewport.top_left();
 
             if pos.x > x {
                 offset.x = offset.x.saturating_sub(pos.x - x);
             } else if pos.x < x {
                 offset.x = offset.x.saturating_add(x - pos.x);
+
+                if within(1, viewport.right(), scroll_view.inner_size().x) {
+                    scroll_view.get_inner_mut().bounds().x += x - pos.x;
+                }
             }
 
             if pos.y > y {
                 offset.y = offset.y.saturating_sub(pos.y - y);
             } else if pos.y < y {
                 offset.y = offset.y.saturating_add(y - pos.y);
+
+                if within(1, viewport.bottom(), scroll_view.inner_size().y) {
+                    scroll_view.get_inner_mut().bounds().y += y - pos.y;
+                }
             }
 
             scroll_view.set_offset(offset);
+            Some(EventResult::Consumed(None))
         }
 
         Release(Right) => {
             *RPOINTER.lock() = None;
+            Some(EventResult::Consumed(None))
         }
 
-        Press(Left) => {
-            let mut view = get_editor_view(siv);
-            let editor = view.get_inner_mut().get_inner_mut();
-            editor.press(content_pos);
-        }
+        _ => None,
+    }
+}
 
-        Hold(Left) => {
-            let mut view = get_editor_view(siv);
-            let editor = view.get_inner_mut().get_inner_mut();
-            editor.hold(content_pos);
-        }
-
-        Release(Left) => {
-            let mut view = get_editor_view(siv);
-            let editor = view.get_inner_mut().get_inner_mut();
-            editor.release(content_pos);
-        }
-
-        _ => {}
-    })
+fn within(w: usize, x: usize, y: usize) -> bool {
+    ((x as isize - y as isize).abs() as usize) <= w
 }
