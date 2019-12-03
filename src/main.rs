@@ -26,12 +26,15 @@ use cursive::{
 use lazy_static::lazy_static;
 use log::info;
 use parking_lot::Mutex;
-use std::error::Error;
+use std::{env, error::Error};
 use structopt::StructOpt;
 
 type MainResult<T> = Result<T, Box<dyn Error>>;
 
 fn main() -> MainResult<()> {
+    // TODO: consider the case of incompatible terminals
+    env::set_var("TERM", "xterm-1006");
+
     logger::init();
     let opts = Options::from_args();
     info!("{:?}", opts);
