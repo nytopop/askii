@@ -113,9 +113,8 @@ where
         };
 
         let menu = siv.menubar();
-        let idx = menu.len() - 1;
-        menu.remove(idx);
-        menu.insert_leaf(idx, tool, |_| ());
+        menu.remove(menu.len() - 1);
+        menu.insert_leaf(menu.len(), tool, |_| ());
     }
 }
 
