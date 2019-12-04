@@ -6,20 +6,20 @@ use super::tools::*;
 use cursive::{theme::ColorStyle, view::View, Printer, Rect, Vec2, XY};
 use line_drawing::Bresenham;
 use std::{
-    cmp::max,
+    cmp::{max, min},
     fs::{File, OpenOptions},
-    io::{self, BufRead, BufReader, Seek, SeekFrom},
-    iter::FromIterator,
+    io::{self, BufRead, BufReader, Write},
+    iter::{self, FromIterator},
     mem,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 use structopt::StructOpt;
 
-#[derive(Debug, StructOpt)]
+#[derive(Clone, Debug, StructOpt)]
 #[structopt(
     author = "Made with love by nytopop <ericizoita@gmail.com>.",
-    help_message = "Prints help information.",
-    version_message = "Prints version information."
+    help_message = "Print help information.",
+    version_message = "Print version information."
 )]
 pub struct Options {
     // true : lines bend 45 degrees
@@ -27,14 +27,19 @@ pub struct Options {
     #[structopt(skip = false)]
     pub line_snap45: bool,
 
+    /// Keep trailing whitespace (on save).
+    #[structopt(short, long)]
+    pub keep_trailing_ws: bool,
+
+    /// Strip all margin whitespace (on save).
+    #[structopt(short, long)]
+    pub strip_margin_ws: bool,
+
     /// Text file to operate on.
     #[structopt(name = "FILE")]
-    pub file: PathBuf,
+    pub file: Option<PathBuf>,
 }
 
-// TODO: undo/redo
-// TODO: new, open, save, save as
-// TODO: help window
 // TODO: path mode for line/arrow
 // TODO: text tool
 // TODO: resize tool
@@ -42,16 +47,16 @@ pub struct Options {
 // TODO: unicode mode
 // TODO: diamond tool
 // TODO: hexagon tool
+// TODO: trapezoid tool
+// TODO: 'are you sure?' prompts on risky actions
 pub struct Editor {
-    opts: Options,
-    file: File,
-
-    buffer: Buffer,
-    history: Vec<Buffer>,
-    undone: Vec<Buffer>,
-
-    tool: Box<dyn Tool>,
-    bounds: Vec2,
+    opts: Options,        // config options
+    buffer: Buffer,       // editing buffer
+    history: Vec<Buffer>, // undo history
+    undone: Vec<Buffer>,  // undo undo history
+    tool: Box<dyn Tool>,  // active tool
+    bounds: Vec2,         // bounds of the canvas, if adjusted
+    rendered: String,     // latest render (kept for the allocation)
 }
 
 impl View for Editor {
@@ -59,7 +64,7 @@ impl View for Editor {
         let buf = &mut [0; 4];
         let style = ColorStyle::highlight_inactive();
 
-        for c in self.buffer.iter(p.content_offset, p.size) {
+        for c in self.buffer.iter_within(p.content_offset, p.size) {
             match c {
                 Char::Clean(Cell { pos, c }) => {
                     p.print(pos, c.encode_utf8(buf));
@@ -83,56 +88,140 @@ impl View for Editor {
 
 impl Editor {
     /// Open an editor instance with the provided options.
-    pub fn open(opts: Options) -> io::Result<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(&opts.file)?;
+    pub fn open(mut opts: Options) -> io::Result<Self> {
+        let file = opts.file.take();
 
         let mut editor = Self {
             opts,
-            file,
-
             buffer: Buffer::default(),
             history: vec![],
             undone: vec![],
-
             tool: Box::new(BoxTool::default()),
             bounds: Vec2::new(0, 0),
+            rendered: String::default(),
         };
 
-        editor.load_from_file()?;
+        if let Some(path) = file {
+            editor.open_file(path)?;
+        }
 
         Ok(editor)
     }
 
-    /// Load buffer state from backing storage.
-    fn load_from_file(&mut self) -> io::Result<()> {
-        self.file.seek(SeekFrom::Start(0))?;
+    /// Clear all buffer state and begin a blank diagram.
+    pub fn clear(&mut self) {
+        self.opts.file = None;
+        self.buffer.clear();
+        self.history.clear();
+        self.undone.clear();
+        self.bounds = Vec2::new(0, 0);
+    }
 
-        self.buffer = BufReader::new(&mut self.file)
+    /// Open the file at `path`, discarding any changes to the current file, if any.
+    ///
+    /// No modifications have been performed if this returns `Err(_)`.
+    pub fn open_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+        let file = OpenOptions::new().read(true).open(path.as_ref())?;
+
+        let buffer = BufReader::new(file)
             .lines()
             .map(|lr| lr.map(|s| s.chars().collect()))
             .collect::<io::Result<_>>()?;
 
+        self.clear();
+        self.opts.file = Some(path.as_ref().into());
+        self.buffer = buffer;
+
         Ok(())
     }
 
+    /// Save the current buffer contents to disk.
+    pub fn save(&mut self) -> io::Result<bool> {
+        if let Some(path) = self.path() {
+            let file = OpenOptions::new()
+                .read(false)
+                .write(true)
+                .create(true)
+                .open(path)?;
+
+            self.render_to(file)?;
+        }
+
+        Ok(self.path().is_some())
+    }
+
+    fn path(&self) -> &Option<PathBuf> {
+        &self.opts.file
+    }
+
+    /// Save the current buffer contents to the file at `path`, and setting that as the
+    /// new path for future calls to `save`.
+    pub fn save_as<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+        self.opts.file = Some(path.as_ref().into());
+        self.save()?;
+
+        Ok(())
+    }
+
+    /// Render to `file`, performing whitespace cleanup if enabled.
+    fn render_to(&mut self, mut file: File) -> io::Result<()> {
+        self.history.push(self.buffer.clone());
+        self.bounds = Vec2::new(0, 0);
+        self.buffer.discard_edits();
+
+        if self.opts.strip_margin_ws {
+            self.buffer.strip_margin_whitespace();
+        } else if !self.opts.keep_trailing_ws {
+            self.buffer.strip_trailing_whitespace();
+        }
+
+        if self.history.last().unwrap() == &self.buffer {
+            self.history.pop();
+        }
+
+        self.rendered.clear();
+        self.rendered.extend(self.buffer.iter());
+
+        file.write_all(self.rendered.as_bytes())?;
+        file.flush()?;
+        file.sync_all()?;
+
+        Ok(())
+    }
+
+    /// Trim whitespace from all margins.
+    pub fn trim_margins(&mut self) {
+        self.history.push(self.buffer.clone());
+
+        self.bounds = Vec2::new(0, 0);
+        self.buffer.discard_edits();
+        self.buffer.strip_margin_whitespace();
+
+        if self.history.last().unwrap() == &self.buffer {
+            self.history.pop();
+        }
+    }
+
     /// Undo the last buffer modification.
-    pub fn undo(&mut self) {
+    ///
+    /// Returns `false` if there was nothing to undo.
+    pub fn undo(&mut self) -> bool {
         self.history
             .pop()
             .map(|buffer| mem::replace(&mut self.buffer, buffer))
-            .map(|buffer| self.undone.push(buffer));
+            .map(|buffer| self.undone.push(buffer))
+            .is_some()
     }
 
     /// Redo the last undo.
-    pub fn redo(&mut self) {
+    ///
+    /// Returns `false` if there was nothing to redo.
+    pub fn redo(&mut self) -> bool {
         self.undone
             .pop()
             .map(|buffer| mem::replace(&mut self.buffer, buffer))
-            .map(|buffer| self.history.push(buffer));
+            .map(|buffer| self.history.push(buffer))
+            .is_some()
     }
 
     /// Returns a mutable reference to the canvas bounds.
@@ -151,7 +240,7 @@ impl Editor {
     }
 
     /// Returns a mutable reference to the loaded options.
-    pub fn opts(&mut self) -> &mut Options {
+    pub fn opts_mut(&mut self) -> &mut Options {
         &mut self.opts
     }
 
@@ -193,6 +282,10 @@ impl Editor {
 
         if keep_changes {
             self.buffer.save_edits();
+
+            if self.history.last().unwrap() == &self.buffer {
+                self.history.pop();
+            }
         }
     }
 }
@@ -218,19 +311,19 @@ const S_W: (isize, isize) = (-1, 0);
 //const S_SW: (isize, isize) = (-1, 1);
 //const S_NW: (isize, isize) = (-1, -1);
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Buffer {
     chars: Vec<Vec<char>>,
     edits: Vec<Cell>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 struct Cell {
     pos: Vec2,
     c: char,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 enum Char {
     Clean(Cell),
     Dirty(Cell),
@@ -245,6 +338,12 @@ impl FromIterator<Vec<char>> for Buffer {
 }
 
 impl Buffer {
+    /// Clears all content in the buffer.
+    fn clear(&mut self) {
+        self.chars.clear();
+        self.edits.clear();
+    }
+
     /// Returns the viewport size required to display all content within the buffer.
     fn bounds(&self) -> Vec2 {
         let x = self.chars.iter().map(Vec::len).max().unwrap_or(0);
@@ -267,9 +366,9 @@ impl Buffer {
         Vec2::new(max(x, ex), max(y, ey))
     }
 
-    /// Returns an iterator of all characters within the viewport formed by `offset` and
-    /// `size`.
-    fn iter<'a>(&'a self, offset: Vec2, size: Vec2) -> impl Iterator<Item = Char> + 'a {
+    /// Returns an iterator over all characters within the viewport formed by `offset`
+    /// and `size`.
+    fn iter_within<'a>(&'a self, offset: Vec2, size: Vec2) -> impl Iterator<Item = Char> + 'a {
         let area = Rect::from_corners(offset, offset + size);
 
         self.chars
@@ -294,6 +393,80 @@ impl Buffer {
                     .filter(move |Cell { pos, .. }| area.contains(*pos))
                     .map(Char::Dirty),
             )
+    }
+
+    /// Returns an iterator over all characters in the buffer, injecting newlines
+    /// where appropriate.
+    fn iter<'a>(&'a self) -> impl Iterator<Item = char> + 'a {
+        self.chars
+            .iter()
+            .flat_map(|line| line.iter().chain(iter::once(&'\n')))
+            .copied()
+    }
+
+    /// Strip margin whitespace from the buffer.
+    fn strip_margin_whitespace(&mut self) {
+        let is_only_ws = |v: &[char]| v.iter().all(|c| c.is_whitespace());
+
+        // upper margin
+        for _ in 0..self
+            .chars
+            .iter()
+            .take_while(|line| is_only_ws(line))
+            .count()
+        {
+            self.chars.remove(0);
+        }
+
+        // lower margin
+        for _ in 0..self
+            .chars
+            .iter()
+            .rev()
+            .take_while(|line| is_only_ws(line))
+            .count()
+        {
+            self.chars.pop();
+        }
+
+        // left margin
+        let min_ws = match self
+            .chars
+            .iter()
+            .filter(|line| !is_only_ws(line))
+            .map(|line| line.iter().position(|c| !c.is_whitespace()))
+            .min()
+            .flatten()
+        {
+            Some(min_ws) => min_ws,
+            None => return,
+        };
+
+        for line in self.chars.iter_mut() {
+            if line.is_empty() {
+                continue;
+            }
+            let idx = min(line.len() - 1, min_ws);
+            let new = line.split_off(idx);
+            mem::replace(line, new);
+        }
+
+        // right margin
+        self.strip_trailing_whitespace();
+    }
+
+    /// Strip trailing whitespace from the buffer.
+    fn strip_trailing_whitespace(&mut self) {
+        let last_is_ws = |v: &[char]| match v.last() {
+            Some(c) if c.is_whitespace() => true,
+            _ => false,
+        };
+
+        for line in self.chars.iter_mut() {
+            while last_is_ws(&line) {
+                line.pop();
+            }
+        }
     }
 
     /// Get the cell at `pos`, if it exists.
@@ -387,28 +560,46 @@ impl Buffer {
 
     /// Draw an arrow from `origin` to `target`.
     pub fn draw_arrow(&mut self, origin: Vec2, target: Vec2) {
+        let dec = |v: usize| v - 1;
+        let inc = |v: usize| v + 1;
+
         let tip = match line_slope(origin, target).pair() {
+            S_N if target.y > 0 && self.visible(target.map_y(dec)) => N,
+            S_N if target.x > 0 && self.visible(target.map_x(dec)) => W,
+            S_N if self.visible(target.map_x(inc)) => E,
             S_N => N,
+
+            S_E if self.visible(target.map_x(inc)) => E,
+            S_E if target.y > 0 && self.visible(target.map_y(dec)) => N,
+            S_E if self.visible(target.map_y(inc)) => S,
             S_E => E,
+
+            S_S if self.visible(target.map_y(inc)) => S,
+            S_S if self.visible(target.map_x(inc)) => E,
+            S_S if target.x > 0 && self.visible(target.map_x(dec)) => W,
             S_S => S,
+
+            S_W if target.x > 0 && self.visible(target.map_x(dec)) => W,
+            S_W if self.visible(target.map_y(inc)) => S,
+            S_W if target.y > 0 && self.visible(target.map_y(dec)) => N,
             S_W => W,
 
             // SE
-            (x, y) if x > 0 && y > 0 && self.visible(target.map_x(|x| x + 1)) => E,
+            (x, y) if x > 0 && y > 0 && self.visible(target.map_x(inc)) => E,
             (x, y) if x > 0 && y > 0 => S,
 
             // NE
-            (x, y) if x > 0 && y < 0 && self.visible(target.map_x(|x| x + 1)) => E,
+            (x, y) if x > 0 && y < 0 && self.visible(target.map_x(inc)) => E,
             (x, y) if x > 0 && y < 0 => N,
 
             // SW
             (x, y) if x < 0 && y > 0 && target.x == 0 => S,
-            (x, y) if x < 0 && y > 0 && self.visible(target.map_x(|x| x - 1)) => W,
+            (x, y) if x < 0 && y > 0 && self.visible(target.map_x(dec)) => W,
             (x, y) if x < 0 && y > 0 => S,
 
             // NW
             (x, y) if x < 0 && y < 0 && target.x == 0 => N,
-            (x, y) if x < 0 && y < 0 && self.visible(target.map_x(|x| x - 1)) => W,
+            (x, y) if x < 0 && y < 0 && self.visible(target.map_x(dec)) => W,
             (x, y) if x < 0 && y < 0 => N,
 
             (_, _) => PLUS,
