@@ -71,22 +71,22 @@ fn main() -> MainResult<()> {
         .add_subtree(
             "Line",
             MenuTree::new()
-                .leaf("Snap 45", set_tool::<LineTool, _>(|o| o.line_snap45 = true))
                 .leaf(
                     "Snap 90",
                     set_tool::<LineTool, _>(|o| o.line_snap45 = false),
-                ),
+                )
+                .leaf("Snap 45", set_tool::<LineTool, _>(|o| o.line_snap45 = true)),
         )
         .add_subtree(
             "Arrow",
             MenuTree::new()
                 .leaf(
-                    "Snap 45",
-                    set_tool::<ArrowTool, _>(|o| o.line_snap45 = true),
-                )
-                .leaf(
                     "Snap 90",
                     set_tool::<ArrowTool, _>(|o| o.line_snap45 = false),
+                )
+                .leaf(
+                    "Snap 45",
+                    set_tool::<ArrowTool, _>(|o| o.line_snap45 = true),
                 ),
         )
         .add_leaf("Text", set_tool::<TextTool, _>(|_| ()))

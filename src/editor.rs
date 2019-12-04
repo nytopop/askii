@@ -563,25 +563,30 @@ impl Buffer {
         let dec = |v: usize| v - 1;
         let inc = |v: usize| v + 1;
 
+        let n = target.y > 0 && self.visible(target.map_y(dec));
+        let e = self.visible(target.map_x(inc));
+        let s = self.visible(target.map_y(inc));
+        let w = target.x > 0 && self.visible(target.map_x(dec));
+
         let tip = match line_slope(origin, target).pair() {
-            S_N if target.y > 0 && self.visible(target.map_y(dec)) => N,
-            S_N if target.x > 0 && self.visible(target.map_x(dec)) => W,
-            S_N if self.visible(target.map_x(inc)) => E,
+            S_N if n || (w && e) => N,
+            S_N if w => W,
+            S_N if e => E,
             S_N => N,
 
-            S_E if self.visible(target.map_x(inc)) => E,
-            S_E if target.y > 0 && self.visible(target.map_y(dec)) => N,
-            S_E if self.visible(target.map_y(inc)) => S,
+            S_E if e || (n && s) => E,
+            S_E if n => N,
+            S_E if s => S,
             S_E => E,
 
-            S_S if self.visible(target.map_y(inc)) => S,
-            S_S if self.visible(target.map_x(inc)) => E,
-            S_S if target.x > 0 && self.visible(target.map_x(dec)) => W,
+            S_S if s || (e && w) => S,
+            S_S if e => E,
+            S_S if w => W,
             S_S => S,
 
-            S_W if target.x > 0 && self.visible(target.map_x(dec)) => W,
-            S_W if self.visible(target.map_y(inc)) => S,
-            S_W if target.y > 0 && self.visible(target.map_y(dec)) => N,
+            S_W if w || (s && n) => W,
+            S_W if s => S,
+            S_W if n => N,
             S_W => W,
 
             // SE
