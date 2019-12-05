@@ -49,7 +49,6 @@ pub struct Options {
 // TODO: diamond tool
 // TODO: hexagon tool
 // TODO: trapezoid tool
-// TODO: 'are you sure?' prompts on risky actions
 pub struct Editor {
     opts: Options,        // config options
     buffer: Buffer,       // editing buffer
