@@ -121,7 +121,7 @@ impl Editor {
     }
 
     /// Returns a mutable reference to the canvas bounds.
-    pub fn bounds(&mut self) -> &mut Vec2 {
+    pub fn bounds_mut(&mut self) -> &mut Vec2 {
         &mut self.bounds
     }
 

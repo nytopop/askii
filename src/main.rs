@@ -24,9 +24,8 @@ use cursive::{
     event::{Event, EventResult, EventTrigger, Key, MouseButton, MouseEvent},
     logger,
     menu::MenuTree,
-    traits::Identifiable,
-    view::scroll::Scroller,
-    views::{Dialog, OnEventView, Panel, ScrollView},
+    view::{scroll::Scroller, Identifiable},
+    views::{Dialog, IdView, OnEventView, Panel, ScrollView},
     Cursive, Vec2,
 };
 use lazy_static::lazy_static;
@@ -35,13 +34,11 @@ use parking_lot::Mutex;
 use std::{env, error::Error, path::PathBuf};
 use structopt::StructOpt;
 
-type MainResult<T> = Result<T, Box<dyn Error>>;
-
-pub const EDITOR_ID: &'static str = "editor";
+const EDITOR_ID: &'static str = "editor";
 const S90: &'static str = "Snap 90";
 const S45: &'static str = "Snap 45";
 
-fn main() -> MainResult<()> {
+fn main() -> Result<(), Box<dyn Error>> {
     // TODO: consider the case of incompatible terminals
     env::set_var("TERM", "xterm-1006");
     logger::init();
@@ -62,7 +59,7 @@ fn main() -> MainResult<()> {
                 .leaf("(S) Save As", editor_save_as)
                 .delimiter()
                 .leaf("(`) Debug", Cursive::toggle_debug_console)
-                .leaf("(q) Quit", Cursive::quit),
+                .leaf("(q) Quit", editor_quit),
         )
         .add_subtree(
             "Edit",
@@ -90,11 +87,11 @@ fn main() -> MainResult<()> {
         .add_delimiter()
         .add_leaf(editor.active_tool(), |_| ());
 
+    // * * c d e f g * i j k * * * * p * * * * * v w x y z
+    // * B C D E F G H I J K * M N O P Q R * T U V W X Y Z
+
     siv.set_autohide_menu(false);
-
     siv.add_global_callback(Key::Esc, |s| s.select_menubar());
-
-    // avail: c e f g i j k p v w x y z
 
     // File
     siv.add_global_callback('n', editor_new);
@@ -121,9 +118,12 @@ fn main() -> MainResult<()> {
     siv.add_global_callback('h', editor_help);
 
     siv.add_fullscreen_layer(Panel::new(
-        OnEventView::new(ScrollView::new(editor).scroll_x(true).scroll_y(true))
-            .on_pre_event_inner(EventTrigger::mouse(), editor_mouse)
-            .with_id(EDITOR_ID),
+        OnEventView::new(
+            ScrollView::new(editor.with_id(EDITOR_ID))
+                .scroll_x(true)
+                .scroll_y(true),
+        )
+        .on_pre_event_inner(EventTrigger::mouse(), editor_event),
     ));
 
     siv.run();
@@ -132,11 +132,11 @@ fn main() -> MainResult<()> {
 }
 
 fn editor_new(siv: &mut Cursive) {
-    with_clean_editor(siv, |siv| with_editor(siv, Editor::clear));
+    with_checked_editor(siv, "New", |siv| with_editor_mut(siv, Editor::clear));
 }
 
 fn editor_open(siv: &mut Cursive) {
-    with_clean_editor(siv, |siv| {
+    with_checked_editor(siv, "Open", |siv| {
         display_form(siv, "Open", |siv, id, raw_path| {
             let mut view = siv.find_id::<Dialog>(id).unwrap();
 
@@ -151,7 +151,7 @@ fn editor_open(siv: &mut Cursive) {
             }
             siv.pop_layer();
 
-            if let Err(e) = with_editor(siv, |e| e.open_file(path)) {
+            if let Err(e) = with_editor_mut(siv, |e| e.open_file(path)) {
                 notify(siv, "open failed", format!("{:?}", e));
             }
         })
@@ -159,7 +159,7 @@ fn editor_open(siv: &mut Cursive) {
 }
 
 fn editor_save(siv: &mut Cursive) {
-    match with_editor(siv, Editor::save).map_err(|e| format!("{:?}", e)) {
+    match with_editor_mut(siv, Editor::save).map_err(|e| format!("{:?}", e)) {
         Ok(false) => editor_save_as(siv),
         Ok(true) => notify(siv, "saved", ""),
         Err(e) => notify(siv, "save failed", e),
@@ -177,7 +177,7 @@ fn editor_save_as(siv: &mut Cursive) {
         }
         siv.pop_layer();
 
-        match with_editor(siv, |e| e.save_as(path)).map_err(|e| format!("{:?}", e)) {
+        match with_editor_mut(siv, |e| e.save_as(path)).map_err(|e| format!("{:?}", e)) {
             Ok(()) => notify(siv, "saved", ""),
             Err(e) => notify(siv, "save as failed", e),
         }
@@ -185,36 +185,36 @@ fn editor_save_as(siv: &mut Cursive) {
 }
 
 fn editor_quit(siv: &mut Cursive) {
-    with_clean_editor(siv, Cursive::quit);
+    with_checked_editor(siv, "Quit", Cursive::quit);
 }
 
 fn editor_undo(siv: &mut Cursive) {
-    with_editor(siv, Editor::undo);
+    with_editor_mut(siv, Editor::undo);
 }
 
 fn editor_redo(siv: &mut Cursive) {
-    with_editor(siv, Editor::redo);
+    with_editor_mut(siv, Editor::redo);
 }
 
 fn editor_trim_margins(siv: &mut Cursive) {
-    with_editor(siv, Editor::trim_margins);
+    with_editor_mut(siv, Editor::trim_margins);
 }
 
-fn editor_tool<T, S>(set: S) -> impl Fn(&mut Cursive) + 'static
+fn editor_tool<'a, T: 'static, S: 'a>(set: S) -> impl Fn(&mut Cursive) + 'a
 where
-    T: Tool + Default + 'static,
-    S: Fn(&mut Options) + 'static,
+    T: Tool + Default,
+    S: Fn(&mut Options),
 {
     move |siv| {
-        let tool = with_editor(siv, |editor| {
+        let tool = with_editor_mut(siv, |editor| {
             set(editor.opts_mut());
             editor.set_tool(T::default());
             editor.active_tool()
         });
 
-        let menu = siv.menubar();
-        menu.remove(menu.len() - 1);
-        menu.insert_leaf(menu.len(), tool, |_| ());
+        let m = siv.menubar();
+        m.remove(m.len() - 1);
+        m.insert_leaf(m.len(), tool, |_| ());
     }
 }
 
@@ -245,7 +245,7 @@ fn editor_help(siv: &mut Cursive) {
     ]
     .join("\n");
 
-    notify_uniq(siv, "help_dialog", "Help", keybinds);
+    notify_unique(siv, "editor_help", "Help", keybinds);
 }
 
 lazy_static! {
@@ -255,7 +255,7 @@ lazy_static! {
 
 const CONSUMED: Option<EventResult> = Some(EventResult::Consumed(None));
 
-fn editor_mouse(view: &mut ScrollView<Editor>, event: &Event) -> Option<EventResult> {
+fn editor_event(view: &mut ScrollView<IdView<Editor>>, event: &Event) -> Option<EventResult> {
     let (offset, pos, event) = match *event {
         Event::Mouse {
             offset,
@@ -307,7 +307,7 @@ fn editor_mouse(view: &mut ScrollView<Editor>, event: &Event) -> Option<EventRes
 
         // BUG: this scrolls even if the tool isn't a drag type
         Hold(Left) => {
-            let editor = get_editor(view);
+            let mut editor = get_editor(view);
             editor.hold(content_pos);
 
             let pos = pos - offset;
@@ -357,7 +357,7 @@ fn editor_mouse(view: &mut ScrollView<Editor>, event: &Event) -> Option<EventRes
                 offset.x = offset.x.saturating_add(x - pos.x);
 
                 if within(1, viewport.right(), view.inner_size().x) {
-                    get_editor(view).bounds().x += x - pos.x;
+                    get_editor(view).bounds_mut().x += x - pos.x;
                 }
             }
 
@@ -367,7 +367,7 @@ fn editor_mouse(view: &mut ScrollView<Editor>, event: &Event) -> Option<EventRes
                 offset.y = offset.y.saturating_add(y - pos.y);
 
                 if within(1, viewport.bottom(), view.inner_size().y) {
-                    get_editor(view).bounds().y += y - pos.y;
+                    get_editor(view).bounds_mut().y += y - pos.y;
                 }
             }
 
