@@ -40,15 +40,6 @@ pub struct Options {
     pub file: Option<PathBuf>,
 }
 
-// TODO: path mode for line/arrow
-// TODO: text tool
-// TODO: resize tool
-// TODO: select tool
-// TODO: erase tool
-// TODO: unicode mode
-// TODO: diamond tool
-// TODO: hexagon tool
-// TODO: trapezoid tool
 pub struct Editor {
     opts: Options,        // config options
     buffer: Buffer,       // editing buffer

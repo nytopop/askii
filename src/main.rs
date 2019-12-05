@@ -2,6 +2,9 @@
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
+//! A tool for drawing ASCII diagrams.
+// TODO: path mode for line and arrow
+// TODO: text, resize, select, erase, diamond, hexagon, trapezoid
 extern crate cursive;
 extern crate lazy_static;
 extern crate line_drawing;
