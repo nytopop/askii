@@ -17,5 +17,5 @@ line_drawing = "0.8.0"
 [dependencies.cursive]
 # version = "0.13.0" # github
 version = "0.13.1-alpha.0"
-features = ["ncurses-backend", "unstable_scroll"]
+features = ["ncurses-backend", "pancurses-backend", "termion-backend", "crossterm-backend", "unstable_scroll"]
 git = "https://github.com/gyscos/cursive.git"

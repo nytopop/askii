@@ -44,6 +44,7 @@ pub struct Options {
 // TODO: text tool
 // TODO: resize tool
 // TODO: select tool
+// TODO: erase tool
 // TODO: unicode mode
 // TODO: diamond tool
 // TODO: hexagon tool
@@ -62,7 +63,7 @@ pub struct Editor {
 impl View for Editor {
     fn draw(&self, p: &Printer<'_, '_>) {
         let buf = &mut [0; 4];
-        let style = ColorStyle::highlight_inactive();
+        let edit_style = ColorStyle::highlight_inactive();
 
         for c in self.buffer.iter_within(p.content_offset, p.size) {
             match c {
@@ -70,7 +71,7 @@ impl View for Editor {
                     p.print(pos, c.encode_utf8(buf));
                 }
                 Char::Dirty(Cell { pos, c }) => {
-                    p.with_color(style, |p| p.print(pos, c.encode_utf8(buf)));
+                    p.with_color(edit_style, |p| p.print(pos, c.encode_utf8(buf)));
                 }
             }
         }
@@ -108,6 +109,46 @@ impl Editor {
         Ok(editor)
     }
 
+    /// Returns a mutable reference to the loaded options.
+    pub fn opts_mut(&mut self) -> &mut Options {
+        &mut self.opts
+    }
+
+    /// Returns `true` if the buffer has been modified since the last save.
+    pub fn is_dirty(&self) -> bool {
+        self.buffer.is_dirty()
+    }
+
+    /// Set the active tool.
+    pub fn set_tool<T: Tool + 'static>(&mut self, tool: T) {
+        self.tool = Box::new(tool);
+        self.tool.load_opts(&self.opts);
+    }
+
+    /// Returns the active tool as a human readable string.
+    pub fn active_tool(&self) -> String {
+        format!("{{ {} }}", self.tool)
+    }
+
+    /// Returns a mutable reference to the canvas bounds.
+    pub fn bounds(&mut self) -> &mut Vec2 {
+        &mut self.bounds
+    }
+
+    /// Set the canvas x bound to the provided value.
+    pub fn set_x_bound(&mut self, x: usize) {
+        self.bounds.x = max(x, self.bounds.x);
+    }
+
+    /// Set the canvas y bound to the provided value.
+    pub fn set_y_bound(&mut self, y: usize) {
+        self.bounds.y = max(y, self.bounds.y);
+    }
+
+    fn path(&self) -> &Option<PathBuf> {
+        &self.opts.file
+    }
+
     /// Clear all buffer state and begin a blank diagram.
     pub fn clear(&mut self) {
         self.opts.file = None;
@@ -136,6 +177,9 @@ impl Editor {
     }
 
     /// Save the current buffer contents to disk.
+    ///
+    /// Returns `Ok(true)` if the buffer was saved, and `Ok(false)` if there is no path
+    /// configured for saving.
     pub fn save(&mut self) -> io::Result<bool> {
         if let Some(path) = self.path() {
             let file = OpenOptions::new()
@@ -145,13 +189,10 @@ impl Editor {
                 .open(path)?;
 
             self.render_to(file)?;
+            self.buffer.clean();
         }
 
         Ok(self.path().is_some())
-    }
-
-    fn path(&self) -> &Option<PathBuf> {
-        &self.opts.file
     }
 
     /// Save the current buffer contents to the file at `path`, and setting that as the
@@ -213,7 +254,7 @@ impl Editor {
             .is_some()
     }
 
-    /// Redo the last undo.
+    /// Redo the last undone buffer modification.
     ///
     /// Returns `false` if there was nothing to redo.
     pub fn redo(&mut self) -> bool {
@@ -222,37 +263,6 @@ impl Editor {
             .map(|buffer| mem::replace(&mut self.buffer, buffer))
             .map(|buffer| self.history.push(buffer))
             .is_some()
-    }
-
-    /// Returns a mutable reference to the canvas bounds.
-    pub fn bounds(&mut self) -> &mut Vec2 {
-        &mut self.bounds
-    }
-
-    /// Set the canvas x bound to the provided value.
-    pub fn set_x_bound(&mut self, x: usize) {
-        self.bounds.x = max(x, self.bounds.x);
-    }
-
-    /// Set the canvas y bound to the provided value.
-    pub fn set_y_bound(&mut self, y: usize) {
-        self.bounds.y = max(y, self.bounds.y);
-    }
-
-    /// Returns a mutable reference to the loaded options.
-    pub fn opts_mut(&mut self) -> &mut Options {
-        &mut self.opts
-    }
-
-    /// Set the active tool.
-    pub fn set_tool<T: Tool + 'static>(&mut self, tool: T) {
-        self.tool = Box::new(tool);
-        self.tool.load_opts(&self.opts);
-    }
-
-    /// Returns the active tool as a human readable string.
-    pub fn active_tool(&self) -> String {
-        format!("{{ {} }}", self.tool)
     }
 
     pub fn press(&mut self, pos: Vec2) {
@@ -285,6 +295,8 @@ impl Editor {
 
             if self.history.last().unwrap() == &self.buffer {
                 self.history.pop();
+            } else {
+                self.buffer.dirty();
             }
         }
     }
@@ -315,6 +327,7 @@ const S_W: (isize, isize) = (-1, 0);
 pub struct Buffer {
     chars: Vec<Vec<char>>,
     edits: Vec<Cell>,
+    dirty: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -331,17 +344,33 @@ enum Char {
 
 impl FromIterator<Vec<char>> for Buffer {
     fn from_iter<T: IntoIterator<Item = Vec<char>>>(iter: T) -> Self {
-        let chars = iter.into_iter().collect();
-        let edits = vec![];
-        Self { chars, edits }
+        Self {
+            chars: iter.into_iter().collect(),
+            edits: vec![],
+            dirty: false,
+        }
     }
 }
 
 impl Buffer {
+    /// Returns `true` if changes have been performed since the last call to `clean`.
+    fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    fn clean(&mut self) {
+        self.dirty = false;
+    }
+
+    fn dirty(&mut self) {
+        self.dirty = true;
+    }
+
     /// Clears all content in the buffer.
     fn clear(&mut self) {
         self.chars.clear();
         self.edits.clear();
+        self.dirty = false;
     }
 
     /// Returns the viewport size required to display all content within the buffer.
