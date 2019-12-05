@@ -11,12 +11,10 @@ use std::{cmp, fmt};
 
 pub trait Tool: fmt::Display {
     /// Configure this tool with the provided options.
-    // TODO: settings menu is difficult to use, alternatives:
-    // * checkboxes that are scoped per tool, in a toolbar under the menubar
     fn load_opts(&mut self, _: &Options) {}
 
-    /// Render to the provided buffer, returning false iff no changes were made.
-    fn render_to(&self, buffer: &mut Buffer);
+    /// Render to the provided buffer.
+    fn render_to(&self, buf: &mut Buffer);
 
     /// Callback to execute when the left mouse button is pressed. Returns whether the
     /// next call to `render_to` should be saved.
@@ -202,9 +200,6 @@ impl Tool for ArrowTool {
         let mid = if self.snap45 {
             line_midpoint_45(origin, target)
         } else {
-            // TODO(bug): this snaps the guiding line based on the position of the arrow
-            // tip, when it should be based on the character immediately beyond the tip.
-            // * check target x +/- 1, y +/- 1?
             match buf.getv(target) {
                 Some('-') => Vec2::new(target.x, origin.y),
                 _ => Vec2::new(origin.x, target.y),
