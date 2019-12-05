@@ -458,7 +458,7 @@ impl Buffer {
         }
 
         // left margin
-        let min_ws = match self
+        if let Some(min_ws) = self
             .chars
             .iter()
             .filter(|line| !is_only_ws(line))
@@ -466,17 +466,14 @@ impl Buffer {
             .min()
             .flatten()
         {
-            Some(min_ws) => min_ws,
-            None => return,
-        };
-
-        for line in self.chars.iter_mut() {
-            if line.is_empty() {
-                continue;
+            for line in self.chars.iter_mut() {
+                if line.is_empty() {
+                    continue;
+                }
+                let idx = min(line.len() - 1, min_ws);
+                let new = line.split_off(idx);
+                mem::replace(line, new);
             }
-            let idx = min(line.len() - 1, min_ws);
-            let new = line.split_off(idx);
-            mem::replace(line, new);
         }
 
         // right margin
@@ -485,15 +482,15 @@ impl Buffer {
 
     /// Strip trailing whitespace from the buffer.
     fn strip_trailing_whitespace(&mut self) {
-        let last_is_ws = |v: &[char]| match v.last() {
-            Some(c) if c.is_whitespace() => true,
-            _ => false,
-        };
-
         for line in self.chars.iter_mut() {
-            while last_is_ws(&line) {
-                line.pop();
-            }
+            let idx = line
+                .iter()
+                .enumerate()
+                .rfind(|p| !p.1.is_whitespace())
+                .map(|p| p.0 + 1)
+                .unwrap_or(0);
+
+            line.truncate(idx);
         }
     }
 
