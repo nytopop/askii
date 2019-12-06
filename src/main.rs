@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     debug!("{:?}", opts);
 
     let editor = Editor::open(opts)?;
-    let mut siv = Cursive::ncurses()?;
+    let mut siv = Cursive::pancurses()?;
 
     siv.menubar()
         .add_subtree(
@@ -123,7 +123,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .scroll_x(true)
                 .scroll_y(true),
         )
-        .on_pre_event_inner(EventTrigger::mouse(), editor_event),
+        .on_pre_event_inner(EventTrigger::any(), editor_event),
     ));
 
     siv.run();
@@ -206,7 +206,7 @@ where
     S: Fn(&mut Options),
 {
     move |siv| {
-        let tool = with_editor_mut(siv, |editor| {
+        let stat = with_editor_mut(siv, |editor| {
             set(editor.opts_mut());
             editor.set_tool(T::default());
             editor.active_tool()
@@ -214,12 +214,18 @@ where
 
         let m = siv.menubar();
         m.remove(m.len() - 1);
-        m.insert_leaf(m.len(), tool, |_| ());
+        m.insert_leaf(m.len(), stat, |_| ());
     }
 }
 
 fn editor_help(siv: &mut Cursive) {
-    let keybinds = vec![
+    let version = format!("askii {}", env!("CARGO_PKG_VERSION"));
+    let author = "Made with love by nytopop <ericizoita@gmail.com>.";
+
+    let help_str = vec![
+        &*version,
+        author,
+        "",
         "# File",
         "(n) New",
         "(o) Open",
@@ -245,7 +251,7 @@ fn editor_help(siv: &mut Cursive) {
     ]
     .join("\n");
 
-    notify_unique(siv, "editor_help", "Help", keybinds);
+    notify_unique(siv, "editor_help", "Help", help_str);
 }
 
 lazy_static! {
@@ -255,6 +261,7 @@ lazy_static! {
 
 const CONSUMED: Option<EventResult> = Some(EventResult::Consumed(None));
 
+// TODO: consolidate scrolling code
 fn editor_event(view: &mut ScrollView<IdView<Editor>>, event: &Event) -> Option<EventResult> {
     let (offset, pos, event) = match *event {
         Event::Mouse {
@@ -263,7 +270,7 @@ fn editor_event(view: &mut ScrollView<IdView<Editor>>, event: &Event) -> Option<
             event,
         } => (offset, position, event),
 
-        _ => return None,
+        _ => return get_editor(view).on_event(event),
     };
 
     use MouseButton::*;
@@ -310,7 +317,7 @@ fn editor_event(view: &mut ScrollView<IdView<Editor>>, event: &Event) -> Option<
             let mut editor = get_editor(view);
             editor.hold(content_pos);
 
-            let pos = pos - offset;
+            let pos = pos.saturating_sub(offset);
             let bounds = viewport.bottom_right() - viewport.top_left();
 
             let mut offset = viewport.top_left();
@@ -356,8 +363,11 @@ fn editor_event(view: &mut ScrollView<IdView<Editor>>, event: &Event) -> Option<
             } else if pos.x < x {
                 offset.x = offset.x.saturating_add(x - pos.x);
 
-                if within(1, viewport.right(), view.inner_size().x) {
-                    get_editor(view).bounds_mut().x += x - pos.x;
+                let x_inner = view.inner_size().x;
+                if within(1, viewport.right(), x_inner) {
+                    let mut editor = get_editor(view);
+                    let base = std::cmp::max(x_inner, editor.x_bound());
+                    editor.set_x_bound(base + (x - pos.x));
                 }
             }
 
@@ -366,8 +376,11 @@ fn editor_event(view: &mut ScrollView<IdView<Editor>>, event: &Event) -> Option<
             } else if pos.y < y {
                 offset.y = offset.y.saturating_add(y - pos.y);
 
-                if within(1, viewport.bottom(), view.inner_size().y) {
-                    get_editor(view).bounds_mut().y += y - pos.y;
+                let y_inner = view.inner_size().y;
+                if within(1, viewport.bottom(), y_inner) {
+                    let mut editor = get_editor(view);
+                    let base = std::cmp::max(y_inner, editor.y_bound());
+                    editor.set_y_bound(base + (y - pos.y));
                 }
             }
 

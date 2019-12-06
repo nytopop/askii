@@ -6,8 +6,11 @@ use super::{
     editor::{line_slope, Buffer},
     Options,
 };
-use cursive::{Rect, Vec2};
-use std::{cmp, fmt};
+use cursive::{
+    event::{Event, EventResult, Key},
+    Rect, Vec2,
+};
+use std::{cmp::min, fmt};
 
 pub trait Tool: fmt::Display {
     /// Configure this tool with the provided options.
@@ -18,13 +21,6 @@ pub trait Tool: fmt::Display {
 
     /// Callback to execute when the left mouse button is pressed. Returns whether the
     /// next call to `render_to` should be saved.
-    // TODO: mem::swap will allow these to take &mut Cursive for popup windows.
-    // * swap tool w/ NoopTool or something
-    // * drop reference to editor so siv isn't aliased
-    // * call tool handle w/ siv
-    // * swap tool back to the editor
-    //
-    // kinda janky, but workable
     fn on_press(&mut self, pos: Vec2) -> bool;
 
     /// Callback to execute when the left mouse button is held. Returns whether the
@@ -36,7 +32,11 @@ pub trait Tool: fmt::Display {
     fn on_release(&mut self, pos: Vec2) -> bool;
 
     /// Reset any internal state, if applicable.
-    fn reset(&mut self) {}
+    fn reset(&mut self);
+
+    fn on_event(&mut self, _: &Event) -> Option<(bool, EventResult)> {
+        None
+    }
 }
 
 #[derive(Copy, Clone, Default, Debug)]
@@ -152,7 +152,7 @@ impl Tool for LineTool {
 }
 
 fn line_midpoint_45(origin: Vec2, target: Vec2) -> Vec2 {
-    let delta = cmp::min(diff(origin.y, target.y), diff(origin.x, target.x));
+    let delta = min(diff(origin.y, target.y), diff(origin.x, target.x));
 
     match line_slope(origin, target).pair() {
         (x, y) if x < 0 && y < 0 => target.map(|v| v + delta),
@@ -235,9 +235,23 @@ impl Tool for ArrowTool {
     }
 }
 
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct TextTool {
-    //
+    origin: Option<Vec2>,
+    ready: bool,
+    buffer: Vec<Vec<char>>,
+    cursor: Vec2,
+}
+
+impl Default for TextTool {
+    fn default() -> Self {
+        Self {
+            origin: None,
+            ready: false,
+            buffer: vec![],
+            cursor: Vec2::new(0, 0),
+        }
+    }
 }
 
 impl fmt::Display for TextTool {
@@ -246,20 +260,113 @@ impl fmt::Display for TextTool {
     }
 }
 
+const IGNORE: Option<(bool, EventResult)> = None;
+const PREVIEW: Option<(bool, EventResult)> = Some((false, EventResult::Consumed(None)));
+const BUFSAVE: Option<(bool, EventResult)> = Some((true, EventResult::Consumed(None)));
+
 impl Tool for TextTool {
-    fn render_to(&self, _buf: &mut Buffer) {
-        //
+    fn render_to(&self, buf: &mut Buffer) {
+        let origin = match self.origin {
+            Some(o) => o,
+            None => return,
+        };
+
+        for (y, line) in self.buffer.iter().enumerate() {
+            for (x, c) in line.iter().enumerate() {
+                let pos = Vec2::new(x, y) + origin;
+                buf.setv(true, pos, *c);
+            }
+        }
+
+        buf.set_cursor(self.cursor + origin);
     }
 
-    fn on_press(&mut self, _pos: Vec2) -> bool {
+    fn on_press(&mut self, pos: Vec2) -> bool {
+        self.origin = Some(pos);
+        self.ready = false;
+        self.buffer.clear();
+        self.buffer.push(vec![]);
+        self.cursor = Vec2::new(0, 0);
+
         false
     }
 
-    fn on_hold(&mut self, _pos: Vec2) -> bool {
+    fn on_hold(&mut self, _: Vec2) -> bool {
         false
     }
 
-    fn on_release(&mut self, _pos: Vec2) -> bool {
+    fn on_release(&mut self, _: Vec2) -> bool {
+        self.ready = true;
         false
+    }
+
+    fn reset(&mut self) {
+        self.origin = None;
+        self.ready = false;
+        self.buffer.clear();
+        self.cursor = Vec2::new(0, 0);
+    }
+
+    fn on_event(&mut self, event: &Event) -> Option<(bool, EventResult)> {
+        if self.origin.is_none() || !self.ready {
+            return None;
+        }
+
+        let Vec2 { x, y } = &mut self.cursor;
+
+        match event {
+            Event::Char(c) => {
+                self.buffer[*y].insert(*x, *c);
+                *x += 1;
+                PREVIEW
+            }
+
+            Event::Key(Key::Up) => {
+                *y = y.saturating_sub(1);
+                *x = min(self.buffer[*y].len(), *x);
+                PREVIEW
+            }
+
+            Event::Key(Key::Down) => {
+                *y = min(self.buffer.len() - 1, *y + 1);
+                *x = min(self.buffer[*y].len(), *x);
+                PREVIEW
+            }
+
+            Event::Key(Key::Left) => {
+                *x = x.saturating_sub(1);
+                PREVIEW
+            }
+
+            Event::Key(Key::Right) => {
+                *x = min(self.buffer[*y].len() - 1, *x + 1);
+                PREVIEW
+            }
+
+            Event::Key(Key::Enter) => {
+                let next = self.buffer[*y].split_off(*x);
+                self.buffer.insert(*y + 1, next);
+                *x = 0;
+                *y += 1;
+                PREVIEW
+            }
+
+            Event::Key(Key::Backspace) | Event::Key(Key::Del) => {
+                if *x > 0 {
+                    self.buffer[*y].remove(*x - 1);
+                    *x -= 1;
+                } else if *y > 0 {
+                    let mut next = self.buffer.remove(*y);
+                    *y -= 1;
+                    *x = self.buffer[*y].len();
+                    self.buffer[*y].append(&mut next);
+                }
+                PREVIEW
+            }
+
+            Event::Key(Key::Esc) => BUFSAVE,
+
+            _ => IGNORE,
+        }
     }
 }

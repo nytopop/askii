@@ -3,7 +3,12 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 use super::tools::*;
-use cursive::{theme::ColorStyle, view::View, Printer, Rect, Vec2, XY};
+use cursive::{
+    event::{Event, EventResult},
+    theme::ColorStyle,
+    view::View,
+    Printer, Rect, Vec2, XY,
+};
 use line_drawing::Bresenham;
 use std::{
     cmp::{max, min},
@@ -50,19 +55,22 @@ pub struct Editor {
     rendered: String,     // latest render (kept for the allocation)
 }
 
+fn print_styled(style: ColorStyle) -> impl FnMut(&Printer<'_, '_>, Vec2, char) {
+    let mut buf = vec![0; 4];
+    move |p, pos, c| p.with_color(style, |p| p.print(pos, c.encode_utf8(&mut buf)))
+}
+
 impl View for Editor {
     fn draw(&self, p: &Printer<'_, '_>) {
-        let buf = &mut [0; 4];
-        let edit_style = ColorStyle::highlight_inactive();
+        let mut normal = print_styled(ColorStyle::primary());
+        let mut change = print_styled(ColorStyle::highlight_inactive());
+        let mut cursor = print_styled(ColorStyle::highlight());
 
         for c in self.buffer.iter_within(p.content_offset, p.size) {
             match c {
-                Char::Clean(Cell { pos, c }) => {
-                    p.print(pos, c.encode_utf8(buf));
-                }
-                Char::Dirty(Cell { pos, c }) => {
-                    p.with_color(edit_style, |p| p.print(pos, c.encode_utf8(buf)));
-                }
+                Char::Clean(Cell { pos, c }) => normal(p, pos, c),
+                Char::Dirty(Cell { pos, c }) => change(p, pos, c),
+                Char::Cursor(Cell { pos, c }) => cursor(p, pos, c),
             }
         }
     }
@@ -111,6 +119,8 @@ impl Editor {
 
     /// Set the active tool.
     pub fn set_tool<T: Tool + 'static>(&mut self, tool: T) {
+        self.buffer.discard_edits();
+        self.buffer.drop_cursor();
         self.tool = Box::new(tool);
         self.tool.load_opts(&self.opts);
     }
@@ -130,12 +140,23 @@ impl Editor {
         self.bounds.x = max(x, self.bounds.x);
     }
 
+    /// Returns the canvas x bound.
+    pub fn x_bound(&self) -> usize {
+        self.bounds.x
+    }
+
     /// Set the canvas y bound to the provided value.
     pub fn set_y_bound(&mut self, y: usize) {
         self.bounds.y = max(y, self.bounds.y);
     }
 
-    fn path(&self) -> &Option<PathBuf> {
+    /// Returns the canvas y bound.
+    pub fn y_bound(&self) -> usize {
+        self.bounds.y
+    }
+
+    /// Returns the current save path.
+    pub fn path(&self) -> &Option<PathBuf> {
         &self.opts.file
     }
 
@@ -148,7 +169,8 @@ impl Editor {
         self.bounds = Vec2::new(0, 0);
     }
 
-    /// Open the file at `path`, discarding any changes to the current file, if any.
+    /// Open the file at `path`, discarding any unsaved changes to the current file, if
+    /// there are any.
     ///
     /// No modifications have been performed if this returns `Err(_)`.
     pub fn open_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
@@ -179,7 +201,7 @@ impl Editor {
                 .open(path)?;
 
             self.render_to(file)?;
-            self.buffer.clean();
+            self.buffer.mark_clean();
         }
 
         Ok(self.path().is_some())
@@ -268,27 +290,35 @@ impl Editor {
     pub fn release(&mut self, pos: Vec2) {
         let keep_changes = self.tool.on_release(pos);
         self.apply_toolstate(keep_changes);
-        self.tool.reset();
     }
 
     fn apply_toolstate(&mut self, keep_changes: bool) {
         self.buffer.discard_edits();
 
         if keep_changes {
-            self.history.push(self.buffer.clone());
+            self.history.push(self.buffer.snapshot());
         }
 
         self.tool.render_to(&mut self.buffer);
 
         if keep_changes {
+            self.tool.reset();
             self.buffer.save_edits();
+            self.buffer.drop_cursor();
 
-            if self.history.last().unwrap() == &self.buffer {
-                self.history.pop();
+            if self.history.last().unwrap() != &self.buffer {
+                self.buffer.mark_dirty();
             } else {
-                self.buffer.dirty();
+                self.history.pop();
             }
         }
+    }
+
+    pub fn on_event(&mut self, event: &Event) -> Option<EventResult> {
+        self.tool.on_event(event).map(|(keep_changes, er)| {
+            self.apply_toolstate(keep_changes);
+            er
+        })
     }
 }
 
@@ -318,6 +348,7 @@ pub struct Buffer {
     chars: Vec<Vec<char>>,
     edits: Vec<Cell>,
     dirty: bool,
+    cursor: Option<Vec2>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -330,6 +361,7 @@ struct Cell {
 enum Char {
     Clean(Cell),
     Dirty(Cell),
+    Cursor(Cell),
 }
 
 impl FromIterator<Vec<char>> for Buffer {
@@ -338,21 +370,44 @@ impl FromIterator<Vec<char>> for Buffer {
             chars: iter.into_iter().collect(),
             edits: vec![],
             dirty: false,
+            cursor: None,
         }
     }
 }
 
 impl Buffer {
-    /// Returns `true` if changes have been performed since the last call to `clean`.
+    /// Returns a copy of this buffer without any pending edits.
+    fn snapshot(&self) -> Self {
+        Self {
+            chars: self.chars.clone(),
+            edits: vec![],
+            dirty: self.dirty,
+            cursor: None,
+        }
+    }
+
+    /// Set the cursor position to `pos`.
+    pub fn set_cursor(&mut self, pos: Vec2) {
+        self.cursor = Some(pos);
+    }
+
+    /// Disable the cursor.
+    pub fn drop_cursor(&mut self) {
+        self.cursor = None;
+    }
+
+    /// Returns `true` if changes have been performed since the last call to `mark_clean`.
     fn is_dirty(&self) -> bool {
         self.dirty
     }
 
-    fn clean(&mut self) {
+    /// Mark the buffer as clean.
+    fn mark_clean(&mut self) {
         self.dirty = false;
     }
 
-    fn dirty(&mut self) {
+    /// Mark the buffer as dirty.
+    fn mark_dirty(&mut self) {
         self.dirty = true;
     }
 
@@ -361,28 +416,40 @@ impl Buffer {
         self.chars.clear();
         self.edits.clear();
         self.dirty = false;
+        self.cursor = None;
     }
 
     /// Returns the viewport size required to display all content within the buffer.
     fn bounds(&self) -> Vec2 {
-        let x = self.chars.iter().map(Vec::len).max().unwrap_or(0);
-        let y = self.chars.len();
+        let mut bounds = Vec2 {
+            x: self.chars.iter().map(Vec::len).max().unwrap_or(0),
+            y: self.chars.len(),
+        };
 
-        let ex = self
-            .edits
-            .iter()
-            .map(|Cell { pos, .. }| pos.x)
-            .max()
-            .unwrap_or(0);
+        bounds.x = max(
+            bounds.x,
+            self.edits
+                .iter()
+                .map(|Cell { pos, .. }| pos.x + 1)
+                .max()
+                .unwrap_or(0),
+        );
 
-        let ey = self
-            .edits
-            .iter()
-            .map(|Cell { pos, .. }| pos.y)
-            .max()
-            .unwrap_or(0);
+        bounds.y = max(
+            bounds.y,
+            self.edits
+                .iter()
+                .map(|Cell { pos, .. }| pos.y + 1)
+                .max()
+                .unwrap_or(0),
+        );
 
-        Vec2::new(max(x, ex), max(y, ey))
+        if let Some(Vec2 { x, y }) = self.cursor {
+            bounds.x = max(bounds.x, x + 1);
+            bounds.y = max(bounds.y, y + 1);
+        }
+
+        bounds
     }
 
     /// Returns an iterator over all characters within the viewport formed by `offset`
@@ -411,6 +478,11 @@ impl Buffer {
                     .copied()
                     .filter(move |Cell { pos, .. }| area.contains(*pos))
                     .map(Char::Dirty),
+            )
+            .chain(
+                self.cursor
+                    .map(|pos| Cell { pos, c: '_' })
+                    .map(Char::Cursor),
             )
     }
 
