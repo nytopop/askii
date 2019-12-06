@@ -4,7 +4,8 @@
 // copied, modified, or distributed except according to those terms.
 //! A tool for drawing ASCII diagrams.
 // TODO: path mode for line and arrow
-// TODO: text, resize, select, erase, diamond, hexagon, trapezoid
+// TODO: resize, select, erase, diamond, hexagon, trapezoid
+// TODO: unify all scroll logic with the editor
 extern crate cursive;
 extern crate lazy_static;
 extern crate line_drawing;
@@ -33,6 +34,31 @@ use log::debug;
 use parking_lot::Mutex;
 use std::{env, error::Error, path::PathBuf};
 use structopt::StructOpt;
+
+#[derive(Clone, Debug, StructOpt)]
+#[structopt(
+    author = "Made with love by nytopop <ericizoita@gmail.com>.",
+    help_message = "Print help information.",
+    version_message = "Print version information."
+)]
+pub struct Options {
+    // true : lines bend 45 degrees
+    // false: lines bend 90 degrees
+    #[structopt(skip = false)]
+    line_snap45: bool,
+
+    /// Keep trailing whitespace (on save).
+    #[structopt(short, long)]
+    keep_trailing_ws: bool,
+
+    /// Strip all margin whitespace (on save).
+    #[structopt(short, long)]
+    strip_margin_ws: bool,
+
+    /// Text file to operate on.
+    #[structopt(name = "FILE")]
+    file: Option<PathBuf>,
+}
 
 const EDITOR_ID: &'static str = "editor";
 const S90: &'static str = "Snap 90";
@@ -200,14 +226,14 @@ fn editor_trim_margins(siv: &mut Cursive) {
     with_editor_mut(siv, Editor::trim_margins);
 }
 
-fn editor_tool<'a, T: 'static, S: 'a>(set: S) -> impl Fn(&mut Cursive) + 'a
+fn editor_tool<'a, T: 'static, S: 'a>(apply: S) -> impl Fn(&mut Cursive) + 'a
 where
     T: Tool + Default,
     S: Fn(&mut Options),
 {
     move |siv| {
         let stat = with_editor_mut(siv, |editor| {
-            set(editor.opts_mut());
+            editor.mut_opts(|o| apply(o));
             editor.set_tool(T::default());
             editor.active_tool()
         });
@@ -261,7 +287,6 @@ lazy_static! {
 
 const CONSUMED: Option<EventResult> = Some(EventResult::Consumed(None));
 
-// TODO: consolidate scrolling code
 fn editor_event(view: &mut ScrollView<IdView<Editor>>, event: &Event) -> Option<EventResult> {
     let (offset, pos, event) = match *event {
         Event::Mouse {

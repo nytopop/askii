@@ -2,7 +2,7 @@
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
-use super::tools::*;
+use super::{tools::*, Options};
 use cursive::{
     event::{Event, EventResult},
     theme::ColorStyle,
@@ -18,32 +18,6 @@ use std::{
     mem,
     path::{Path, PathBuf},
 };
-use structopt::StructOpt;
-
-#[derive(Clone, Debug, StructOpt)]
-#[structopt(
-    author = "Made with love by nytopop <ericizoita@gmail.com>.",
-    help_message = "Print help information.",
-    version_message = "Print version information."
-)]
-pub struct Options {
-    // true : lines bend 45 degrees
-    // false: lines bend 90 degrees
-    #[structopt(skip = false)]
-    pub line_snap45: bool,
-
-    /// Keep trailing whitespace (on save).
-    #[structopt(short, long)]
-    pub keep_trailing_ws: bool,
-
-    /// Strip all margin whitespace (on save).
-    #[structopt(short, long)]
-    pub strip_margin_ws: bool,
-
-    /// Text file to operate on.
-    #[structopt(name = "FILE")]
-    pub file: Option<PathBuf>,
-}
 
 pub struct Editor {
     opts: Options,        // config options
@@ -107,9 +81,10 @@ impl Editor {
         Ok(editor)
     }
 
-    /// Returns a mutable reference to the loaded options.
-    pub fn opts_mut(&mut self) -> &mut Options {
-        &mut self.opts
+    /// Mutate the loaded options with `apply`.
+    pub fn mut_opts<F: FnOnce(&mut Options)>(&mut self, apply: F) {
+        apply(&mut self.opts);
+        self.tool.load_opts(&self.opts);
     }
 
     /// Returns `true` if the buffer has been modified since the last save.
@@ -156,7 +131,7 @@ impl Editor {
     }
 
     /// Returns the current save path.
-    pub fn path(&self) -> &Option<PathBuf> {
+    fn path(&self) -> &Option<PathBuf> {
         &self.opts.file
     }
 
