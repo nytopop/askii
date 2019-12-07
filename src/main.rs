@@ -4,7 +4,8 @@
 // copied, modified, or distributed except according to those terms.
 //! A tool for drawing ASCII diagrams.
 // TODO: path mode for line and arrow
-// TODO: resize, select, erase, diamond, hexagon, trapezoid
+// TODO: shapes (diamond, hexagon, parallelogram, trapezoid)
+// TODO: tools (resize, select, erase)
 // TODO: think of a way to do tests (dummy backend + injected events?)
 extern crate cursive;
 extern crate lazy_static;
