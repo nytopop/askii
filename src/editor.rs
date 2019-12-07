@@ -4,22 +4,260 @@
 // copied, modified, or distributed except according to those terms.
 use super::{tools::*, Options};
 use cursive::{
-    event::{Event, EventResult},
+    event::{Event, EventResult, MouseButton::*, MouseEvent::*},
     theme::ColorStyle,
-    view::View,
+    view::{scroll::Scroller, View},
+    views::ScrollView,
     Printer, Rect, Vec2, XY,
 };
+use lazy_static::lazy_static;
 use line_drawing::Bresenham;
+use parking_lot::Mutex;
 use std::{
     cmp::{max, min},
-    fs::{File, OpenOptions},
-    io::{self, BufRead, BufReader, Write},
-    iter::{self, FromIterator},
-    mem,
+    fs::{self, File, OpenOptions},
+    io::{self, BufRead, BufReader, ErrorKind, Read, Write},
+    iter, mem,
     path::{Path, PathBuf},
 };
 
-pub struct Editor {
+pub(crate) const CONSUMED: Option<EventResult> = Some(EventResult::Consumed(None));
+
+macro_rules! intercept_scrollbar {
+    ($ctx:expr, $event:expr) => {{
+        lazy_static! {
+            static ref LAST_LPRESS: Mutex<Option<Vec2>> = Mutex::new(None);
+        }
+
+        if let Event::Mouse {
+            offset,
+            position: pos,
+            event,
+        } = $event
+        {
+            match event {
+                Press(Left) if $ctx.on_scrollbar(*offset, *pos) => {
+                    *LAST_LPRESS.lock() = Some(*pos);
+                    return None;
+                }
+
+                Press(Left) => {
+                    *LAST_LPRESS.lock() = Some(*pos);
+                }
+
+                Hold(Left)
+                    if LAST_LPRESS
+                        .lock()
+                        .map(|pos| $ctx.on_scrollbar(*offset, pos))
+                        .unwrap_or(false) =>
+                {
+                    return None;
+                }
+
+                Release(Left)
+                    if LAST_LPRESS
+                        .lock()
+                        .take()
+                        .map(|pos| $ctx.on_scrollbar(*offset, pos))
+                        .unwrap_or(false) =>
+                {
+                    return None;
+                }
+
+                _ => {}
+            }
+        }
+    }};
+}
+
+macro_rules! intercept_pan {
+    ($ctx:expr, $event:expr) => {{
+        lazy_static! {
+            static ref OLD: Mutex<Option<Vec2>> = Mutex::new(None);
+        }
+
+        if let Event::Mouse {
+            position: pos,
+            event,
+            ..
+        } = $event
+        {
+            match event {
+                Press(Right) => {
+                    *OLD.lock() = Some(*pos);
+                    return CONSUMED;
+                }
+
+                Hold(Right) if OLD.lock().is_none() => {
+                    *OLD.lock() = Some(*pos);
+                    return CONSUMED;
+                }
+
+                Hold(Right) => {
+                    let old = OLD.lock().replace(*pos).unwrap();
+
+                    let offset = ($ctx.0.content_viewport())
+                        .top_left()
+                        .map_x(|x| drag(x, pos.x, old.x))
+                        .map_y(|y| drag(y, pos.y, old.y));
+
+                    $ctx.0.set_offset(offset);
+
+                    let p = $ctx.0.content_viewport();
+                    let i = $ctx.0.inner_size();
+
+                    if pos.x < old.x && within((old.x - pos.x + 1) * 4, p.right(), i.x) {
+                        $ctx.0.get_inner_mut().bounds.x += old.x - pos.x;
+                    }
+                    if pos.y < old.y && within((old.y - pos.y + 1) * 2, p.bottom(), i.y) {
+                        $ctx.0.get_inner_mut().bounds.y += old.y - pos.y;
+                    }
+
+                    return CONSUMED;
+                }
+
+                Release(Right) => {
+                    *OLD.lock() = None;
+                    return CONSUMED;
+                }
+
+                _ => {}
+            }
+        }
+    }};
+}
+
+fn drag(x: usize, new: usize, old: usize) -> usize {
+    if new > old {
+        x.saturating_sub(new - old)
+    } else {
+        x + (old - new)
+    }
+}
+
+/// Returns `true` if `a` is within `w` of `b` (inclusive).
+pub(crate) fn within(w: usize, a: usize, b: usize) -> bool {
+    diff(a, b) <= w
+}
+
+/// Returns the absolute difference between `a` and `b`.
+pub(crate) fn diff(a: usize, b: usize) -> usize {
+    (a as isize - b as isize).abs() as usize
+}
+
+pub(crate) struct EditorCtx<'a>(&'a mut ScrollView<Editor>);
+
+impl<'a> EditorCtx<'a> {
+    /// Returns a new `EditorCtx`.
+    pub(super) fn new(view: &'a mut ScrollView<Editor>) -> Self {
+        Self(view)
+    }
+
+    /// Handles an event using the active tool.
+    pub(super) fn on_event(&mut self, event: &Event) -> Option<EventResult> {
+        intercept_scrollbar!(self, event);
+        intercept_pan!(self, event);
+
+        let mut tool = mem::replace(self.tool(), Box::new(NoopTool));
+        let res = tool.on_event(self, event);
+        mem::swap(self.tool(), &mut tool);
+
+        res
+    }
+
+    /// Returns a mutable reference to the active tool.
+    fn tool(&mut self) -> &mut Box<dyn Tool> {
+        &mut self.0.get_inner_mut().tool
+    }
+
+    /// Returns `true` if `pos` is located on a scrollbar.
+    fn on_scrollbar(&self, offset: Vec2, pos: Vec2) -> bool {
+        let core = self.0.get_scroller();
+        let max = core.last_size() + offset;
+        let min = max - core.scrollbar_size();
+
+        (min.x..=max.x).contains(&pos.x) || (min.y..=max.y).contains(&pos.y)
+    }
+
+    /// If `event` is a mouse event, relativize its position to the canvas plane.
+    pub(crate) fn relativize(&self, event: &Event) -> Event {
+        let mut event = event.clone();
+        if let Event::Mouse {
+            offset, position, ..
+        } = &mut event
+        {
+            let tl = self.0.content_viewport().top_left();
+            *position = position.saturating_sub(*offset) + tl;
+        }
+        event
+    }
+
+    /// Scroll to `pos`, moving at least `step_x` & `step_y` respectively if the x or y
+    /// scroll offset needs to be modified.
+    pub(crate) fn scroll_to(&mut self, pos: Vec2, step_x: usize, step_y: usize) {
+        let port = self.0.content_viewport();
+        let mut offset = port.top_left();
+
+        if pos.x >= port.right() {
+            offset.x += max(step_x, pos.x - port.right());
+        } else if pos.x <= port.left() {
+            offset.x -= max(min(step_x, offset.x), port.left() - pos.x);
+        }
+        if pos.y >= port.bottom() {
+            offset.y += max(step_y, pos.y - port.bottom());
+        } else if pos.y <= port.top() {
+            offset.y -= max(min(step_y, offset.y), port.top() - pos.y);
+        }
+        self.0.set_offset(offset);
+
+        // BUG: scrolling lags behind changes to the canvas bounds by 1 render tick. in
+        // order to truly fix the issue, we need to implement scrolling as a function of
+        // the editor itself.
+        let editor = self.0.get_inner_mut();
+        if pos.x >= editor.bounds.x {
+            editor.bounds.x += max(step_x, pos.x - editor.bounds.x);
+        }
+        if pos.y >= editor.bounds.y {
+            editor.bounds.y += max(step_y, pos.y - editor.bounds.y);
+        }
+    }
+
+    /// Scroll to the edit buffer's current cursor, if one exists.
+    pub(crate) fn scroll_to_cursor(&mut self) {
+        if let Some(pos) = self.0.get_inner_mut().buffer.cursor {
+            self.scroll_to(pos, 1, 1);
+        }
+    }
+
+    /// Modify the edit buffer using `render`, flushing any changes and saving a snapshot
+    /// of the buffer's prior state in the editor's undo history.
+    pub(crate) fn clobber<R: FnOnce(&mut Buffer)>(&mut self, render: R) {
+        let editor = self.0.get_inner_mut();
+
+        let snapshot = editor.buffer.snapshot();
+        editor.history.push(snapshot);
+
+        editor.buffer.discard_edits();
+        render(&mut editor.buffer);
+        editor.buffer.flush_edits();
+        editor.buffer.drop_cursor();
+
+        if editor.history.last().unwrap() != &editor.buffer {
+            editor.buffer.mark_dirty();
+        } else {
+            editor.history.pop();
+        }
+    }
+
+    /// Modify the edit buffer using `render`, without flushing any of changes.
+    pub(crate) fn preview<R: FnOnce(&mut Buffer)>(&mut self, render: R) {
+        let editor = self.0.get_inner_mut();
+        editor.buffer.discard_edits();
+        render(&mut editor.buffer);
+    }
+}
+
+pub(crate) struct Editor {
     opts: Options,        // config options
     buffer: Buffer,       // editing buffer
     history: Vec<Buffer>, // undo history
@@ -27,11 +265,6 @@ pub struct Editor {
     tool: Box<dyn Tool>,  // active tool
     bounds: Vec2,         // bounds of the canvas, if adjusted
     rendered: String,     // latest render (kept for the allocation)
-}
-
-fn print_styled(style: ColorStyle) -> impl FnMut(&Printer<'_, '_>, Vec2, char) {
-    let mut buf = vec![0; 4];
-    move |p, pos, c| p.with_color(style, |p| p.print(pos, c.encode_utf8(&mut buf)))
 }
 
 impl View for Editor {
@@ -52,16 +285,27 @@ impl View for Editor {
     fn required_size(&mut self, size: Vec2) -> Vec2 {
         let buf_bounds = self.buffer.bounds();
 
-        Vec2 {
+        let bounds = Vec2 {
             x: max(size.x, max(buf_bounds.x, self.bounds.x)),
             y: max(size.y, max(buf_bounds.y, self.bounds.y)),
-        }
+        };
+
+        self.bounds = bounds;
+
+        bounds
+    }
+}
+
+fn print_styled(style: ColorStyle) -> impl FnMut(&Printer<'_, '_>, Vec2, char) {
+    let mut buf = vec![0; 4];
+    move |p, pos, c| {
+        p.with_color(style, |p| p.print(pos, c.encode_utf8(&mut buf)));
     }
 }
 
 impl Editor {
     /// Open an editor instance with the provided options.
-    pub fn open(mut opts: Options) -> io::Result<Self> {
+    pub(crate) fn open(mut opts: Options) -> io::Result<Self> {
         let file = opts.file.take();
 
         let mut editor = Self {
@@ -82,18 +326,18 @@ impl Editor {
     }
 
     /// Mutate the loaded options with `apply`.
-    pub fn mut_opts<F: FnOnce(&mut Options)>(&mut self, apply: F) {
+    pub(crate) fn mut_opts<F: FnOnce(&mut Options)>(&mut self, apply: F) {
         apply(&mut self.opts);
         self.tool.load_opts(&self.opts);
     }
 
     /// Returns `true` if the buffer has been modified since the last save.
-    pub fn is_dirty(&self) -> bool {
+    pub(crate) fn is_dirty(&self) -> bool {
         self.buffer.is_dirty()
     }
 
     /// Set the active tool.
-    pub fn set_tool<T: Tool + 'static>(&mut self, tool: T) {
+    pub(crate) fn set_tool<T: Tool + 'static>(&mut self, tool: T) {
         self.buffer.discard_edits();
         self.buffer.drop_cursor();
         self.tool = Box::new(tool);
@@ -101,33 +345,8 @@ impl Editor {
     }
 
     /// Returns the active tool as a human readable string.
-    pub fn active_tool(&self) -> String {
+    pub(crate) fn active_tool(&self) -> String {
         format!("{{ {} }}", self.tool)
-    }
-
-    /// Returns a mutable reference to the canvas bounds.
-    pub fn bounds_mut(&mut self) -> &mut Vec2 {
-        &mut self.bounds
-    }
-
-    /// Set the canvas x bound to the provided value.
-    pub fn set_x_bound(&mut self, x: usize) {
-        self.bounds.x = max(x, self.bounds.x);
-    }
-
-    /// Returns the canvas x bound.
-    pub fn x_bound(&self) -> usize {
-        self.bounds.x
-    }
-
-    /// Set the canvas y bound to the provided value.
-    pub fn set_y_bound(&mut self, y: usize) {
-        self.bounds.y = max(y, self.bounds.y);
-    }
-
-    /// Returns the canvas y bound.
-    pub fn y_bound(&self) -> usize {
-        self.bounds.y
     }
 
     /// Returns the current save path.
@@ -136,7 +355,7 @@ impl Editor {
     }
 
     /// Clear all buffer state and begin a blank diagram.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.opts.file = None;
         self.buffer.clear();
         self.history.clear();
@@ -148,17 +367,20 @@ impl Editor {
     /// there are any.
     ///
     /// No modifications have been performed if this returns `Err(_)`.
-    pub fn open_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
-        let file = OpenOptions::new().read(true).open(path.as_ref())?;
+    pub(crate) fn open_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+        let buffer = OpenOptions::new()
+            .read(true)
+            .open(path.as_ref())
+            .and_then(Buffer::read_from);
 
-        let buffer = BufReader::new(file)
-            .lines()
-            .map(|lr| lr.map(|s| s.chars().collect()))
-            .collect::<io::Result<_>>()?;
+        let buffer = match buffer {
+            Err(er) if er.kind() == ErrorKind::NotFound => None,
+            r => Some(r?),
+        };
 
         self.clear();
         self.opts.file = Some(path.as_ref().into());
-        self.buffer = buffer;
+        buffer.map(|buf| self.buffer = buf);
 
         Ok(())
     }
@@ -167,8 +389,12 @@ impl Editor {
     ///
     /// Returns `Ok(true)` if the buffer was saved, and `Ok(false)` if there is no path
     /// configured for saving.
-    pub fn save(&mut self) -> io::Result<bool> {
+    ///
+    /// If the configured save path does not exist, this will recursively create it.
+    pub(crate) fn save(&mut self) -> io::Result<bool> {
         if let Some(path) = self.path() {
+            path.parent().map(fs::create_dir_all).transpose()?;
+
             let file = OpenOptions::new()
                 .read(false)
                 .write(true)
@@ -184,7 +410,7 @@ impl Editor {
 
     /// Save the current buffer contents to the file at `path`, and setting that as the
     /// new path for future calls to `save`.
-    pub fn save_as<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+    pub(crate) fn save_as<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
         self.opts.file = Some(path.as_ref().into());
         self.save()?;
 
@@ -218,7 +444,7 @@ impl Editor {
     }
 
     /// Trim whitespace from all margins.
-    pub fn trim_margins(&mut self) {
+    pub(crate) fn trim_margins(&mut self) {
         self.history.push(self.buffer.clone());
 
         self.bounds = Vec2::new(0, 0);
@@ -233,7 +459,7 @@ impl Editor {
     /// Undo the last buffer modification.
     ///
     /// Returns `false` if there was nothing to undo.
-    pub fn undo(&mut self) -> bool {
+    pub(crate) fn undo(&mut self) -> bool {
         self.history
             .pop()
             .map(|buffer| mem::replace(&mut self.buffer, buffer))
@@ -244,56 +470,12 @@ impl Editor {
     /// Redo the last undone buffer modification.
     ///
     /// Returns `false` if there was nothing to redo.
-    pub fn redo(&mut self) -> bool {
+    pub(crate) fn redo(&mut self) -> bool {
         self.undone
             .pop()
             .map(|buffer| mem::replace(&mut self.buffer, buffer))
             .map(|buffer| self.history.push(buffer))
             .is_some()
-    }
-
-    pub fn press(&mut self, pos: Vec2) {
-        let keep_changes = self.tool.on_press(pos);
-        self.apply_toolstate(keep_changes);
-    }
-
-    pub fn hold(&mut self, pos: Vec2) {
-        let keep_changes = self.tool.on_hold(pos);
-        self.apply_toolstate(keep_changes);
-    }
-
-    pub fn release(&mut self, pos: Vec2) {
-        let keep_changes = self.tool.on_release(pos);
-        self.apply_toolstate(keep_changes);
-    }
-
-    fn apply_toolstate(&mut self, keep_changes: bool) {
-        self.buffer.discard_edits();
-
-        if keep_changes {
-            self.history.push(self.buffer.snapshot());
-        }
-
-        self.tool.render_to(&mut self.buffer);
-
-        if keep_changes {
-            self.tool.reset();
-            self.buffer.save_edits();
-            self.buffer.drop_cursor();
-
-            if self.history.last().unwrap() != &self.buffer {
-                self.buffer.mark_dirty();
-            } else {
-                self.history.pop();
-            }
-        }
-    }
-
-    pub fn on_event(&mut self, event: &Event) -> Option<EventResult> {
-        self.tool.on_event(event).map(|(keep_changes, er)| {
-            self.apply_toolstate(keep_changes);
-            er
-        })
     }
 }
 
@@ -313,13 +495,9 @@ const S_N: (isize, isize) = (0, -1);
 const S_E: (isize, isize) = (1, 0);
 const S_S: (isize, isize) = (0, 1);
 const S_W: (isize, isize) = (-1, 0);
-//const S_NE: (isize, isize) = (1, -1);
-//const S_SE: (isize, isize) = (1, 1);
-//const S_SW: (isize, isize) = (-1, 1);
-//const S_NW: (isize, isize) = (-1, -1);
 
 #[derive(Clone, Default, PartialEq, Eq)]
-pub struct Buffer {
+pub(crate) struct Buffer {
     chars: Vec<Vec<char>>,
     edits: Vec<Cell>,
     dirty: bool,
@@ -339,18 +517,19 @@ enum Char {
     Cursor(Cell),
 }
 
-impl FromIterator<Vec<char>> for Buffer {
-    fn from_iter<T: IntoIterator<Item = Vec<char>>>(iter: T) -> Self {
-        Self {
-            chars: iter.into_iter().collect(),
+impl Buffer {
+    fn read_from<R: Read>(r: R) -> io::Result<Self> {
+        Ok(Self {
+            chars: BufReader::new(r)
+                .lines()
+                .map(|lr| lr.map(|s| s.chars().collect()))
+                .collect::<io::Result<_>>()?,
             edits: vec![],
             dirty: false,
             cursor: None,
-        }
+        })
     }
-}
 
-impl Buffer {
     /// Returns a copy of this buffer without any pending edits.
     fn snapshot(&self) -> Self {
         Self {
@@ -362,12 +541,12 @@ impl Buffer {
     }
 
     /// Set the cursor position to `pos`.
-    pub fn set_cursor(&mut self, pos: Vec2) {
+    pub(crate) fn set_cursor(&mut self, pos: Vec2) {
         self.cursor = Some(pos);
     }
 
     /// Disable the cursor.
-    pub fn drop_cursor(&mut self) {
+    fn drop_cursor(&mut self) {
         self.cursor = None;
     }
 
@@ -535,7 +714,7 @@ impl Buffer {
     /// Get the cell at `pos`, if it exists.
     ///
     /// Does not consider any pending edits.
-    pub fn getv(&self, pos: Vec2) -> Option<char> {
+    pub(crate) fn getv(&self, pos: Vec2) -> Option<char> {
         self.chars.get(pos.y).and_then(|v| v.get(pos.x)).copied()
     }
 
@@ -543,12 +722,12 @@ impl Buffer {
     /// character.
     ///
     /// Does not consider any pending edits.
-    pub fn visible(&self, pos: Vec2) -> bool {
+    pub(crate) fn visible(&self, pos: Vec2) -> bool {
         self.getv(pos).map(|c| !c.is_whitespace()).unwrap_or(false)
     }
 
     /// Set the cell at `pos` to `c`.
-    pub fn setv(&mut self, force: bool, pos: Vec2, c: char) {
+    pub(crate) fn setv(&mut self, force: bool, pos: Vec2, c: char) {
         if force {
             self.edits.push(Cell { pos, c });
             return;
@@ -574,12 +753,12 @@ impl Buffer {
     }
 
     /// Set the cell at `(x, y)` to `c`.
-    pub fn set(&mut self, force: bool, x: usize, y: usize, c: char) {
+    pub(crate) fn set(&mut self, force: bool, x: usize, y: usize, c: char) {
         self.setv(force, Vec2::new(x, y), c)
     }
 
     /// Flush any pending edits to the primary buffer, allocating as necessary.
-    fn save_edits(&mut self) {
+    fn flush_edits(&mut self) {
         for Cell {
             pos: Vec2 { x, y },
             c,
@@ -602,7 +781,7 @@ impl Buffer {
     }
 
     /// Draw a line from `origin` to `target`.
-    pub fn draw_line(&mut self, origin: Vec2, target: Vec2) {
+    pub(crate) fn draw_line(&mut self, origin: Vec2, target: Vec2) {
         for (i, (s, e)) in Bresenham::new(origin.signed().pair(), target.signed().pair())
             .steps()
             .enumerate()
@@ -622,34 +801,34 @@ impl Buffer {
     }
 
     /// Draw an arrow from `origin` to `target`.
-    pub fn draw_arrow(&mut self, origin: Vec2, target: Vec2) {
+    pub(crate) fn draw_arrow(&mut self, origin: Vec2, target: Vec2) {
         let dec = |v: usize| v - 1;
         let inc = |v: usize| v + 1;
 
-        let n = target.y > 0 && self.visible(target.map_y(dec));
-        let e = self.visible(target.map_x(inc));
-        let s = self.visible(target.map_y(inc));
-        let w = target.x > 0 && self.visible(target.map_x(dec));
+        let north = target.y > 0 && self.visible(target.map_y(dec));
+        let east = self.visible(target.map_x(inc));
+        let south = self.visible(target.map_y(inc));
+        let west = target.x > 0 && self.visible(target.map_x(dec));
 
         let tip = match line_slope(origin, target).pair() {
-            S_N if n || (w && e) => N,
-            S_N if w => W,
-            S_N if e => E,
+            S_N if north || (west && east) => N,
+            S_N if west => W,
+            S_N if east => E,
             S_N => N,
 
-            S_E if e || (n && s) => E,
-            S_E if n => N,
-            S_E if s => S,
+            S_E if east || (north && south) => E,
+            S_E if north => N,
+            S_E if south => S,
             S_E => E,
 
-            S_S if s || (e && w) => S,
-            S_S if e => E,
-            S_S if w => W,
+            S_S if south || (east && west) => S,
+            S_S if east => E,
+            S_S if west => W,
             S_S => S,
 
-            S_W if w || (s && n) => W,
-            S_W if s => S,
-            S_W if n => N,
+            S_W if west || (south && north) => W,
+            S_W if south => S,
+            S_W if north => N,
             S_W => W,
 
             // SE
@@ -693,7 +872,7 @@ fn precedence(c: char) -> usize {
 /// Returns the slope between points at `origin` and `target`.
 ///
 /// The resulting fraction will be reduced to its simplest terms.
-pub fn line_slope<P: Into<XY<isize>>>(origin: P, target: P) -> XY<isize> {
+pub(crate) fn line_slope<P: Into<XY<isize>>>(origin: P, target: P) -> XY<isize> {
     let xy = target.into() - origin;
 
     match gcd(xy.x, xy.y) {
@@ -703,7 +882,7 @@ pub fn line_slope<P: Into<XY<isize>>>(origin: P, target: P) -> XY<isize> {
 }
 
 /// Returns the greatest common denominator between `a` and `b`.
-pub fn gcd(mut a: isize, mut b: isize) -> isize {
+pub(crate) fn gcd(mut a: isize, mut b: isize) -> isize {
     while b != 0 {
         let t = b;
         b = a % b;

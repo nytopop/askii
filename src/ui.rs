@@ -6,14 +6,14 @@ use super::{editor::Editor, EDITOR_ID};
 use cursive::{
     align::HAlign,
     view::Identifiable,
-    views::{Dialog, EditView, IdView, ScrollView, ViewRef},
+    views::{Dialog, EditView, ScrollView},
     Cursive,
 };
 use std::rc::Rc;
 
 /// Run `f` if the editor's buffer has not been modified since the last save, or if user
 /// has confirmed that they're ok with discarding unsaved changes.
-pub fn with_checked_editor<T, F: 'static>(siv: &mut Cursive, title: T, f: F)
+pub(super) fn with_checked_editor<T, F: 'static>(siv: &mut Cursive, title: T, f: F)
 where
     T: Into<String>,
     F: Fn(&mut Cursive),
@@ -27,36 +27,31 @@ where
 
 /// Run `f` with a mutable reference to the editor, returning its result. Shorthand for
 /// looking up the view any time it's needed.
-pub fn with_editor_mut<T, F>(siv: &mut Cursive, f: F) -> T
+pub(super) fn with_editor_mut<T, F>(siv: &mut Cursive, f: F) -> T
 where
     F: FnOnce(&mut Editor) -> T,
 {
-    siv.find_id::<Editor>(EDITOR_ID)
-        .map(|mut editor| f(&mut editor))
+    siv.find_id::<ScrollView<Editor>>(EDITOR_ID)
+        .map(|mut view| f(view.get_inner_mut()))
         .unwrap()
 }
 
 /// Run `f` with an immutable reference to the editor, returning its result. Shorthand for
 /// looking up the view any time it's needed.
-pub fn with_editor<T, F>(siv: &mut Cursive, f: F) -> T
+pub(super) fn with_editor<T, F>(siv: &mut Cursive, f: F) -> T
 where
     F: FnOnce(&Editor) -> T,
 {
-    siv.find_id::<Editor>(EDITOR_ID)
-        .map(|editor| f(&editor))
+    siv.find_id::<ScrollView<Editor>>(EDITOR_ID)
+        .map(|view| f(view.get_inner()))
         .unwrap()
 }
 
-/// Get a handle to the editor, given a containing `&mut ScrollView`.
-pub fn get_editor(scroll_view: &mut ScrollView<IdView<Editor>>) -> ViewRef<Editor> {
-    scroll_view.get_inner_mut().get_mut()
-}
-
-const POPUP_ID: &'static str = "generic_popup";
+const POPUP_ID: &str = "generic_popup";
 
 /// Display a "Yes / No" prompt with the provided `title`, running `yes` iff "Yes" is
 /// pressed. Defaults to "No".
-pub fn display_yesno<T, C, F: 'static>(siv: &mut Cursive, title: T, content: C, yes: F)
+pub(super) fn display_yesno<T, C, F: 'static>(siv: &mut Cursive, title: T, content: C, yes: F)
 where
     T: Into<String>,
     C: Into<String>,
@@ -82,7 +77,7 @@ where
 
 /// Display a single line input form, passing the submitted content into the provided
 /// callback `form`.
-pub fn display_form<T, F: 'static>(siv: &mut Cursive, title: T, form: F)
+pub(super) fn display_form<T, F: 'static>(siv: &mut Cursive, title: T, form: F)
 where
     T: Into<String>,
     F: Fn(&mut Cursive, &'static str, &str),
@@ -91,7 +86,7 @@ where
         return;
     }
 
-    const INPUT_ID: &'static str = "generic_input";
+    const INPUT_ID: &str = "generic_input";
 
     let submit = Rc::new(move |siv: &mut Cursive, input: &str| {
         form(siv, POPUP_ID, input);
@@ -118,7 +113,7 @@ where
 }
 
 /// Display a notification dialog.
-pub fn notify<T, C>(siv: &mut Cursive, title: T, content: C)
+pub(super) fn notify<T, C>(siv: &mut Cursive, title: T, content: C)
 where
     T: Into<String>,
     C: Into<String>,
@@ -133,7 +128,7 @@ where
 
 /// Display a unique notification dialog. No two dialogs with the same `unique_id` will
 /// ever be shown at the same time.
-pub fn notify_unique<T, C>(siv: &mut Cursive, unique_id: &'static str, title: T, content: C)
+pub(super) fn notify_unique<T, C>(siv: &mut Cursive, unique_id: &'static str, title: T, content: C)
 where
     T: Into<String>,
     C: Into<String>,

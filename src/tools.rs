@@ -3,44 +3,72 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 use super::{
-    editor::{line_slope, Buffer},
+    editor::{diff, line_slope, Buffer, EditorCtx, CONSUMED},
     Options,
 };
 use cursive::{
-    event::{Event, EventResult, Key},
+    event::{Event, EventResult, Key, MouseButton::*, MouseEvent::*},
     Rect, Vec2,
 };
 use std::{cmp::min, fmt};
 
-pub trait Tool: fmt::Display {
-    /// Configure this tool with the provided options.
-    fn load_opts(&mut self, _: &Options) {}
+macro_rules! option {
+    ($a:expr) => {
+        match $a {
+            Some(a) => a,
+            _ => return,
+        }
+    };
 
-    /// Render to the provided buffer.
-    fn render_to(&self, buf: &mut Buffer);
+    ($a:expr, $b:expr) => {
+        match ($a, $b) {
+            (Some(a), Some(b)) => (a, b),
+            _ => return,
+        }
+    };
+}
 
-    /// Callback to execute when the left mouse button is pressed. Returns whether the
-    /// next call to `render_to` should be saved.
-    fn on_press(&mut self, pos: Vec2) -> bool;
+macro_rules! mouse_drag {
+    ($ctx:expr, $event:expr) => {{
+        let (pos, event) = match $ctx.relativize($event) {
+            Event::Mouse {
+                position, event, ..
+            } => (position, event),
 
-    /// Callback to execute when the left mouse button is held. Returns whether the
-    /// next call to `render_to` should be saved.
-    fn on_hold(&mut self, pos: Vec2) -> bool;
+            _ => return None,
+        };
 
-    /// Callback to execute when the left mouse button is released. Returns whether the
-    /// next call to `render_to` should be saved.
-    fn on_release(&mut self, pos: Vec2) -> bool;
+        if let Hold(Left) = event {
+            $ctx.scroll_to(pos, 3, 2);
+        }
 
-    /// Reset any internal state, if applicable.
-    fn reset(&mut self);
+        (pos, event)
+    }};
+}
 
-    fn on_event(&mut self, _: &Event) -> Option<(bool, EventResult)> {
+pub(crate) trait Tool: fmt::Display {
+    fn load_opts(&mut self, _: &Options) {
+        {}
+    }
+
+    fn on_event(&mut self, _: &mut EditorCtx<'_>, _: &Event) -> Option<EventResult> {
         None
     }
 }
 
+#[derive(Copy, Clone)]
+pub(crate) struct NoopTool;
+
+impl fmt::Display for NoopTool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Noop")
+    }
+}
+
+impl Tool for NoopTool {}
+
 #[derive(Copy, Clone, Default, Debug)]
-pub struct BoxTool {
+pub(crate) struct BoxTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
 }
@@ -52,12 +80,38 @@ impl fmt::Display for BoxTool {
 }
 
 impl Tool for BoxTool {
-    fn render_to(&self, buf: &mut Buffer) {
-        let (origin, target) = match (self.origin, self.target) {
-            (Some(o), Some(t)) => (o, t),
-            (Some(o), None) => (o, o),
-            _ => return,
-        };
+    fn on_event(&mut self, ctx: &mut EditorCtx<'_>, event: &Event) -> Option<EventResult> {
+        let (pos, event) = mouse_drag!(ctx, event);
+
+        match event {
+            Press(Left) => {
+                self.origin = Some(pos);
+                self.target = Some(pos);
+                ctx.preview(|buf| self.render(buf));
+            }
+
+            Hold(Left) => {
+                self.target = Some(pos);
+                ctx.preview(|buf| self.render(buf));
+            }
+
+            Release(Left) => {
+                self.target = Some(pos);
+                ctx.clobber(|buf| self.render(buf));
+                self.origin = None;
+                self.target = None;
+            }
+
+            _ => return None,
+        }
+
+        CONSUMED
+    }
+}
+
+impl BoxTool {
+    fn render(&self, buf: &mut Buffer) {
+        let (origin, target) = option!(self.origin, self.target);
 
         let r = Rect::from_corners(origin, target);
 
@@ -66,30 +120,10 @@ impl Tool for BoxTool {
         buf.draw_line(r.bottom_right(), r.bottom_left());
         buf.draw_line(r.bottom_left(), r.top_left());
     }
-
-    fn on_press(&mut self, pos: Vec2) -> bool {
-        self.origin = Some(pos);
-        false
-    }
-
-    fn on_hold(&mut self, pos: Vec2) -> bool {
-        self.target = Some(pos);
-        false
-    }
-
-    fn on_release(&mut self, pos: Vec2) -> bool {
-        self.target = Some(pos);
-        true
-    }
-
-    fn reset(&mut self) {
-        self.origin = None;
-        self.target = None;
-    }
 }
 
 #[derive(Copy, Clone, Default, Debug)]
-pub struct LineTool {
+pub(crate) struct LineTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
     snap45: bool,
@@ -110,13 +144,40 @@ impl Tool for LineTool {
         self.snap45 = opts.line_snap45;
     }
 
-    fn render_to(&self, buf: &mut Buffer) {
-        let (origin, target) = match (self.origin, self.target) {
-            (Some(o), Some(t)) => (o, t),
-            (Some(o), None) => (o, o),
-            _ => return,
-        };
+    fn on_event(&mut self, ctx: &mut EditorCtx<'_>, event: &Event) -> Option<EventResult> {
+        let (pos, event) = mouse_drag!(ctx, event);
 
+        match event {
+            Press(Left) => {
+                self.origin = Some(pos);
+                self.target = Some(pos);
+                ctx.preview(|buf| self.render(buf));
+            }
+
+            Hold(Left) => {
+                self.target = Some(pos);
+                ctx.preview(|buf| self.render(buf));
+            }
+
+            Release(Left) => {
+                self.target = Some(pos);
+                ctx.clobber(|buf| self.render(buf));
+                self.origin = None;
+                self.target = None;
+            }
+
+            _ => return None,
+        }
+
+        CONSUMED
+    }
+}
+
+impl LineTool {
+    fn render(&self, buf: &mut Buffer) {
+        let (origin, target) = option!(self.origin, self.target);
+
+        // TODO: move snap logic to impl Buffer
         let mid = if self.snap45 {
             line_midpoint_45(origin, target)
         } else {
@@ -128,26 +189,6 @@ impl Tool for LineTool {
 
         buf.draw_line(origin, mid);
         buf.draw_line(mid, target);
-    }
-
-    fn on_press(&mut self, pos: Vec2) -> bool {
-        self.origin = Some(pos);
-        false
-    }
-
-    fn on_hold(&mut self, pos: Vec2) -> bool {
-        self.target = Some(pos);
-        false
-    }
-
-    fn on_release(&mut self, pos: Vec2) -> bool {
-        self.target = Some(pos);
-        true
-    }
-
-    fn reset(&mut self) {
-        self.origin = None;
-        self.target = None;
     }
 }
 
@@ -163,13 +204,8 @@ fn line_midpoint_45(origin: Vec2, target: Vec2) -> Vec2 {
     }
 }
 
-/// Returns the absolute difference between x and y.
-fn diff(x: usize, y: usize) -> usize {
-    (x as isize - y as isize).abs() as usize
-}
-
 #[derive(Copy, Clone, Default, Debug)]
-pub struct ArrowTool {
+pub(crate) struct ArrowTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
     snap45: bool,
@@ -190,12 +226,38 @@ impl Tool for ArrowTool {
         self.snap45 = opts.line_snap45;
     }
 
-    fn render_to(&self, buf: &mut Buffer) {
-        let (origin, target) = match (self.origin, self.target) {
-            (Some(o), Some(t)) => (o, t),
-            (Some(o), None) => (o, o),
-            _ => return,
-        };
+    fn on_event(&mut self, ctx: &mut EditorCtx<'_>, event: &Event) -> Option<EventResult> {
+        let (pos, event) = mouse_drag!(ctx, event);
+
+        match event {
+            Press(Left) => {
+                self.origin = Some(pos);
+                self.target = Some(pos);
+                ctx.preview(|buf| self.render(buf));
+            }
+
+            Hold(Left) => {
+                self.target = Some(pos);
+                ctx.preview(|buf| self.render(buf));
+            }
+
+            Release(Left) => {
+                self.target = Some(pos);
+                ctx.clobber(|buf| self.render(buf));
+                self.origin = None;
+                self.target = None;
+            }
+
+            _ => return None,
+        }
+
+        CONSUMED
+    }
+}
+
+impl ArrowTool {
+    fn render(&self, buf: &mut Buffer) {
+        let (origin, target) = option!(self.origin, self.target);
 
         let mid = if self.snap45 {
             line_midpoint_45(origin, target)
@@ -213,30 +275,10 @@ impl Tool for ArrowTool {
             buf.draw_arrow(origin, target);
         }
     }
-
-    fn on_press(&mut self, pos: Vec2) -> bool {
-        self.origin = Some(pos);
-        false
-    }
-
-    fn on_hold(&mut self, pos: Vec2) -> bool {
-        self.target = Some(pos);
-        false
-    }
-
-    fn on_release(&mut self, pos: Vec2) -> bool {
-        self.target = Some(pos);
-        true
-    }
-
-    fn reset(&mut self) {
-        self.origin = None;
-        self.target = None;
-    }
 }
 
 #[derive(Clone, Debug)]
-pub struct TextTool {
+pub(crate) struct TextTool {
     origin: Option<Vec2>,
     ready: bool,
     buffer: Vec<Vec<char>>,
@@ -260,87 +302,65 @@ impl fmt::Display for TextTool {
     }
 }
 
-const IGNORE: Option<(bool, EventResult)> = None;
-const PREVIEW: Option<(bool, EventResult)> = Some((false, EventResult::Consumed(None)));
-const BUFSAVE: Option<(bool, EventResult)> = Some((true, EventResult::Consumed(None)));
-
 impl Tool for TextTool {
-    fn render_to(&self, buf: &mut Buffer) {
-        let origin = match self.origin {
-            Some(o) => o,
-            None => return,
-        };
-
-        for (y, line) in self.buffer.iter().enumerate() {
-            for (x, c) in line.iter().enumerate() {
-                let pos = Vec2::new(x, y) + origin;
-                buf.setv(true, pos, *c);
-            }
-        }
-
-        buf.set_cursor(self.cursor + origin);
-    }
-
-    fn on_press(&mut self, pos: Vec2) -> bool {
-        self.origin = Some(pos);
-        self.ready = false;
-        self.buffer.clear();
-        self.buffer.push(vec![]);
-        self.cursor = Vec2::new(0, 0);
-
-        false
-    }
-
-    fn on_hold(&mut self, _: Vec2) -> bool {
-        false
-    }
-
-    fn on_release(&mut self, _: Vec2) -> bool {
-        self.ready = true;
-        false
-    }
-
-    fn reset(&mut self) {
-        self.origin = None;
-        self.ready = false;
-        self.buffer.clear();
-        self.cursor = Vec2::new(0, 0);
-    }
-
-    fn on_event(&mut self, event: &Event) -> Option<(bool, EventResult)> {
-        if self.origin.is_none() || !self.ready {
-            return None;
-        }
-
+    fn on_event(&mut self, ctx: &mut EditorCtx<'_>, event: &Event) -> Option<EventResult> {
         let Vec2 { x, y } = &mut self.cursor;
 
-        match event {
+        match ctx.relativize(event) {
+            Event::Mouse {
+                event: Press(Left),
+                position,
+                ..
+            } => {
+                self.origin = Some(position);
+                self.ready = false;
+                self.buffer.clear();
+                self.buffer.push(vec![]);
+                self.cursor = Vec2::new(0, 0);
+                ctx.preview(|buf| self.render(buf));
+            }
+
+            Event::Mouse {
+                event: Release(Left),
+                ..
+            } => {
+                self.ready = true;
+                ctx.preview(|buf| self.render(buf));
+            }
+
+            _ if !self.ready => return None,
+
             Event::Char(c) => {
-                self.buffer[*y].insert(*x, *c);
+                self.buffer[*y].insert(*x, c);
                 *x += 1;
-                PREVIEW
+                ctx.preview(|buf| self.render(buf));
+                ctx.scroll_to_cursor();
             }
 
             Event::Key(Key::Up) => {
                 *y = y.saturating_sub(1);
                 *x = min(self.buffer[*y].len(), *x);
-                PREVIEW
+                ctx.preview(|buf| self.render(buf));
+                ctx.scroll_to_cursor();
             }
 
             Event::Key(Key::Down) => {
                 *y = min(self.buffer.len() - 1, *y + 1);
                 *x = min(self.buffer[*y].len(), *x);
-                PREVIEW
+                ctx.preview(|buf| self.render(buf));
+                ctx.scroll_to_cursor();
             }
 
             Event::Key(Key::Left) => {
                 *x = x.saturating_sub(1);
-                PREVIEW
+                ctx.preview(|buf| self.render(buf));
+                ctx.scroll_to_cursor();
             }
 
             Event::Key(Key::Right) => {
-                *x = min(self.buffer[*y].len() - 1, *x + 1);
-                PREVIEW
+                *x = min(self.buffer[*y].len(), *x + 1);
+                ctx.preview(|buf| self.render(buf));
+                ctx.scroll_to_cursor();
             }
 
             Event::Key(Key::Enter) => {
@@ -348,7 +368,8 @@ impl Tool for TextTool {
                 self.buffer.insert(*y + 1, next);
                 *x = 0;
                 *y += 1;
-                PREVIEW
+                ctx.preview(|buf| self.render(buf));
+                ctx.scroll_to_cursor();
             }
 
             Event::Key(Key::Backspace) | Event::Key(Key::Del) => {
@@ -361,12 +382,36 @@ impl Tool for TextTool {
                     *x = self.buffer[*y].len();
                     self.buffer[*y].append(&mut next);
                 }
-                PREVIEW
+                ctx.preview(|buf| self.render(buf));
+                ctx.scroll_to_cursor();
             }
 
-            Event::Key(Key::Esc) => BUFSAVE,
+            Event::Key(Key::Esc) => {
+                ctx.clobber(|buf| self.render(buf));
+                self.origin = None;
+                self.ready = false;
+                self.buffer.clear();
+                self.cursor = Vec2::new(0, 0);
+            }
 
-            _ => IGNORE,
+            _ => return None,
         }
+
+        CONSUMED
+    }
+}
+
+impl TextTool {
+    fn render(&self, buf: &mut Buffer) {
+        let origin = option!(self.origin);
+
+        for (y, line) in self.buffer.iter().enumerate() {
+            for (x, c) in line.iter().enumerate() {
+                let pos = Vec2::new(x, y) + origin;
+                buf.setv(true, pos, *c);
+            }
+        }
+
+        buf.set_cursor(self.cursor + origin);
     }
 }

@@ -5,7 +5,7 @@
 //! A tool for drawing ASCII diagrams.
 // TODO: path mode for line and arrow
 // TODO: resize, select, erase, diamond, hexagon, trapezoid
-// TODO: unify all scroll logic with the editor
+// TODO: think of a way to do tests (dummy backend + injected events?)
 extern crate cursive;
 extern crate lazy_static;
 extern crate line_drawing;
@@ -13,25 +13,23 @@ extern crate log;
 extern crate parking_lot;
 extern crate structopt;
 
-pub mod editor;
-pub mod tools;
-pub mod ui;
+mod editor;
+mod tools;
+mod ui;
 
 use editor::*;
 use tools::*;
 use ui::*;
 
 use cursive::{
-    event::{Event, EventResult, EventTrigger, Key, MouseButton, MouseEvent},
+    event::{EventTrigger, Key},
     logger,
     menu::MenuTree,
-    view::{scroll::Scroller, Identifiable},
-    views::{Dialog, IdView, OnEventView, Panel, ScrollView},
-    Cursive, Vec2,
+    view::Identifiable,
+    views::{Dialog, OnEventView, Panel, ScrollView},
+    Cursive,
 };
-use lazy_static::lazy_static;
 use log::debug;
-use parking_lot::Mutex;
 use std::{env, error::Error, path::PathBuf};
 use structopt::StructOpt;
 
@@ -41,7 +39,7 @@ use structopt::StructOpt;
     help_message = "Print help information.",
     version_message = "Print version information."
 )]
-pub struct Options {
+struct Options {
     // true : lines bend 45 degrees
     // false: lines bend 90 degrees
     #[structopt(skip = false)]
@@ -60,9 +58,9 @@ pub struct Options {
     file: Option<PathBuf>,
 }
 
-const EDITOR_ID: &'static str = "editor";
-const S90: &'static str = "Snap 90";
-const S45: &'static str = "Snap 45";
+const EDITOR_ID: &str = "editor";
+const S90: &str = "Snap 90";
+const S45: &str = "Snap 45";
 
 fn main() -> Result<(), Box<dyn Error>> {
     // TODO: consider the case of incompatible terminals
@@ -145,11 +143,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     siv.add_fullscreen_layer(Panel::new(
         OnEventView::new(
-            ScrollView::new(editor.with_id(EDITOR_ID))
+            ScrollView::new(editor)
                 .scroll_x(true)
-                .scroll_y(true),
+                .scroll_y(true)
+                .with_id(EDITOR_ID),
         )
-        .on_pre_event_inner(EventTrigger::any(), editor_event),
+        .on_pre_event_inner(EventTrigger::any(), |view, event| {
+            let mut scroll = view.get_mut();
+            let mut ctx = EditorCtx::new(&mut scroll);
+            ctx.on_event(event)
+        }),
     ));
 
     siv.run();
@@ -245,12 +248,20 @@ where
 }
 
 fn editor_help(siv: &mut Cursive) {
-    let version = format!("askii {}", env!("CARGO_PKG_VERSION"));
-    let author = "Made with love by nytopop <ericizoita@gmail.com>.";
+    let version_str = format!("askii {}", env!("CARGO_PKG_VERSION"));
+
+    let authors = env!("CARGO_PKG_AUTHORS")
+        .split(':')
+        .map(|s| format!("* {}", s))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let author_str = format!("Made with love by:\n{}", authors);
 
     let help_str = vec![
-        &*version,
-        author,
+        &*version_str,
+        "",
+        &*author_str,
         "",
         "# File",
         "(n) New",
@@ -277,159 +288,7 @@ fn editor_help(siv: &mut Cursive) {
     ]
     .join("\n");
 
+    // TODO: (H): tool specific help
+
     notify_unique(siv, "editor_help", "Help", help_str);
-}
-
-lazy_static! {
-    static ref LAST_LPRESS: Mutex<Option<Vec2>> = Mutex::new(None);
-    static ref RPOINTER: Mutex<Option<Vec2>> = Mutex::new(None);
-}
-
-const CONSUMED: Option<EventResult> = Some(EventResult::Consumed(None));
-
-fn editor_event(view: &mut ScrollView<IdView<Editor>>, event: &Event) -> Option<EventResult> {
-    let (offset, pos, event) = match *event {
-        Event::Mouse {
-            offset,
-            position,
-            event,
-        } => (offset, position, event),
-
-        _ => return get_editor(view).on_event(event),
-    };
-
-    use MouseButton::*;
-    use MouseEvent::*;
-
-    let viewport = view.content_viewport();
-    let content_pos = pos.saturating_sub(offset) + viewport.top_left();
-
-    match event {
-        Press(Left) if on_scrollbar(view, offset, pos) => {
-            *LAST_LPRESS.lock() = Some(pos);
-            None
-        }
-
-        Hold(Left)
-            if LAST_LPRESS
-                .lock()
-                .map(|pos| on_scrollbar(view, offset, pos))
-                .unwrap_or(false) =>
-        {
-            None
-        }
-
-        Release(Left)
-            if LAST_LPRESS
-                .lock()
-                .take()
-                .map(|pos| on_scrollbar(view, offset, pos))
-                .unwrap_or(false) =>
-        {
-            None
-        }
-
-        WheelUp | WheelDown => None,
-
-        Press(Left) => {
-            *LAST_LPRESS.lock() = Some(pos);
-            get_editor(view).press(content_pos);
-            CONSUMED
-        }
-
-        // BUG: this scrolls even if the tool isn't a drag type
-        Hold(Left) => {
-            let mut editor = get_editor(view);
-            editor.hold(content_pos);
-
-            let pos = pos.saturating_sub(offset);
-            let bounds = viewport.bottom_right() - viewport.top_left();
-
-            let mut offset = viewport.top_left();
-            if pos.x > bounds.x {
-                offset.x = offset.x.saturating_add(3);
-                editor.set_x_bound(offset.x + bounds.x);
-            } else if pos.x == 0 {
-                offset.x = offset.x.saturating_sub(3);
-            }
-
-            if pos.y > bounds.y {
-                offset.y = offset.y.saturating_add(3);
-                editor.set_y_bound(offset.y + bounds.y);
-            } else if pos.y == 0 {
-                offset.y = offset.y.saturating_sub(3);
-            }
-
-            view.set_offset(offset);
-            CONSUMED
-        }
-
-        Release(Left) => {
-            get_editor(view).release(content_pos);
-            CONSUMED
-        }
-
-        Press(Right) => {
-            *RPOINTER.lock() = Some(pos);
-            CONSUMED
-        }
-
-        Hold(Right) if RPOINTER.lock().is_none() => {
-            *RPOINTER.lock() = Some(pos);
-            CONSUMED
-        }
-
-        Hold(Right) => {
-            let Vec2 { x, y } = RPOINTER.lock().replace(pos).unwrap();
-            let mut offset = viewport.top_left();
-
-            if pos.x > x {
-                offset.x = offset.x.saturating_sub(pos.x - x);
-            } else if pos.x < x {
-                offset.x = offset.x.saturating_add(x - pos.x);
-
-                let x_inner = view.inner_size().x;
-                if within(1, viewport.right(), x_inner) {
-                    let mut editor = get_editor(view);
-                    let base = std::cmp::max(x_inner, editor.x_bound());
-                    editor.set_x_bound(base + (x - pos.x));
-                }
-            }
-
-            if pos.y > y {
-                offset.y = offset.y.saturating_sub(pos.y - y);
-            } else if pos.y < y {
-                offset.y = offset.y.saturating_add(y - pos.y);
-
-                let y_inner = view.inner_size().y;
-                if within(1, viewport.bottom(), y_inner) {
-                    let mut editor = get_editor(view);
-                    let base = std::cmp::max(y_inner, editor.y_bound());
-                    editor.set_y_bound(base + (y - pos.y));
-                }
-            }
-
-            view.set_offset(offset);
-            CONSUMED
-        }
-
-        Release(Right) => {
-            *RPOINTER.lock() = None;
-            CONSUMED
-        }
-
-        _ => None,
-    }
-}
-
-fn on_scrollbar<S: Scroller>(scroll: &S, offset: Vec2, pos: Vec2) -> bool {
-    let core = scroll.get_scroller();
-    let max = core.last_size() + offset;
-    let min = max - core.scrollbar_size();
-
-    (min.x..=max.x).contains(&pos.x) || (min.y..=max.y).contains(&pos.y)
-}
-
-fn within(w: usize, x: usize, y: usize) -> bool {
-    ((x as isize - y as isize).abs() as usize) <= w
 }
