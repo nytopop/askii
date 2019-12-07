@@ -166,6 +166,7 @@ impl<'a> EditorCtx<'a> {
     }
 
     /// Returns a mutable reference to the active tool.
+    #[allow(clippy::borrowed_box)]
     fn tool(&mut self) -> &mut Box<dyn Tool> {
         &mut self.0.get_inner_mut().tool
     }
@@ -380,7 +381,9 @@ impl Editor {
 
         self.clear();
         self.opts.file = Some(path.as_ref().into());
-        buffer.map(|buf| self.buffer = buf);
+        if let Some(buf) = buffer {
+            self.buffer = buf;
+        }
 
         Ok(())
     }
