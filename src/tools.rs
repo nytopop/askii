@@ -56,17 +56,6 @@ pub(crate) trait Tool: fmt::Display {
     }
 }
 
-#[derive(Copy, Clone)]
-pub(crate) struct NoopTool;
-
-impl fmt::Display for NoopTool {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Noop")
-    }
-}
-
-impl Tool for NoopTool {}
-
 #[derive(Copy, Clone, Default, Debug)]
 pub(crate) struct BoxTool {
     origin: Option<Vec2>,

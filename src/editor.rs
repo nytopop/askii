@@ -158,17 +158,11 @@ impl<'a> EditorCtx<'a> {
         intercept_scrollbar!(self, event);
         intercept_pan!(self, event);
 
-        let mut tool = mem::replace(self.tool(), Box::new(NoopTool));
+        let mut tool = self.0.get_inner_mut().tool.take().unwrap();
         let res = tool.on_event(self, event);
-        mem::swap(self.tool(), &mut tool);
+        self.0.get_inner_mut().tool = Some(tool);
 
         res
-    }
-
-    /// Returns a mutable reference to the active tool.
-    #[allow(clippy::borrowed_box)]
-    fn tool(&mut self) -> &mut Box<dyn Tool> {
-        &mut self.0.get_inner_mut().tool
     }
 
     /// Returns `true` if `pos` is located on a scrollbar.
@@ -259,13 +253,13 @@ impl<'a> EditorCtx<'a> {
 }
 
 pub(crate) struct Editor {
-    opts: Options,        // config options
-    buffer: Buffer,       // editing buffer
-    history: Vec<Buffer>, // undo history
-    undone: Vec<Buffer>,  // undo undo history
-    tool: Box<dyn Tool>,  // active tool
-    bounds: Vec2,         // bounds of the canvas, if adjusted
-    rendered: String,     // latest render (kept for the allocation)
+    opts: Options,               // config options
+    buffer: Buffer,              // editing buffer
+    history: Vec<Buffer>,        // undo history
+    undone: Vec<Buffer>,         // undo undo history
+    tool: Option<Box<dyn Tool>>, // active tool
+    bounds: Vec2,                // bounds of the canvas, if adjusted
+    rendered: String,            // latest render (kept for the allocation)
 }
 
 impl View for Editor {
@@ -309,12 +303,15 @@ impl Editor {
     pub(crate) fn open(mut opts: Options) -> io::Result<Self> {
         let file = opts.file.take();
 
+        let mut tool = BoxTool::default();
+        tool.load_opts(&opts);
+
         let mut editor = Self {
             opts,
             buffer: Buffer::default(),
             history: vec![],
             undone: vec![],
-            tool: Box::new(BoxTool::default()),
+            tool: Some(Box::new(tool)),
             bounds: Vec2::new(0, 0),
             rendered: String::default(),
         };
@@ -329,7 +326,9 @@ impl Editor {
     /// Mutate the loaded options with `apply`.
     pub(crate) fn mut_opts<F: FnOnce(&mut Options)>(&mut self, apply: F) {
         apply(&mut self.opts);
-        self.tool.load_opts(&self.opts);
+        if let Some(tool) = self.tool.as_mut() {
+            tool.load_opts(&self.opts);
+        }
     }
 
     /// Returns `true` if the buffer has been modified since the last save.
@@ -338,16 +337,16 @@ impl Editor {
     }
 
     /// Set the active tool.
-    pub(crate) fn set_tool<T: Tool + 'static>(&mut self, tool: T) {
+    pub(crate) fn set_tool<T: Tool + 'static>(&mut self, mut tool: T) {
         self.buffer.discard_edits();
         self.buffer.drop_cursor();
-        self.tool = Box::new(tool);
-        self.tool.load_opts(&self.opts);
+        tool.load_opts(&self.opts);
+        self.tool = Some(Box::new(tool));
     }
 
     /// Returns the active tool as a human readable string.
     pub(crate) fn active_tool(&self) -> String {
-        format!("{{ {} }}", self.tool)
+        format!("{{ {} }}", self.tool.as_ref().unwrap())
     }
 
     /// Returns the current save path.
