@@ -1,5 +1,4 @@
-# askii
-![askii](askii.png)
+[![askii](askii.png)](https://github.com/nytopop/askii)
 
 A tool for drawing ASCII diagrams.
 
