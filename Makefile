@@ -13,8 +13,8 @@ all: $(BIN) $(DEB) $(RPM)
 
 .PHONY: $(BIN)
 $(BIN):
-	mkdir -p $(DIST)/bin
 	cargo build --release
+	mkdir -p $(DIST)/bin
 	cp target/release/$(NAME) $(BIN)
 	strip $(BIN)
 
@@ -33,7 +33,7 @@ clean: distclean
 	cargo clean
 
 .PHONY: dev-clippy
-clippy:
+dev-clippy:
 	cargo watch -c -x clippy
 
 .PHONY: dev-install
