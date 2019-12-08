@@ -1,5 +1,10 @@
 # askii
+![askii](askii.png)
+
 A tool for drawing ASCII diagrams.
+
+# Installation
+Install a [binary package](https://github.com/nytopop/askii/releases), or use `cargo install askii` to compile the latest source from [crates.io](https://crates.io/crates/askii).
 
 # Compilation
 Use `cargo`. The binary dynamically links against `libncursesw.so.6`, so make sure it is available.
