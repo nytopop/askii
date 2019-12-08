@@ -45,7 +45,7 @@ install:
 	cargo install --path . --force
 
 .PHONY: release
-release:
+release: all
 	$(eval TOKEN := $(shell cat ~/.github-token-askii))
 	cargo publish
 	git tag -f v$(VERSION)
