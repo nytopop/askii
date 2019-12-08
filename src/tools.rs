@@ -46,29 +46,8 @@ macro_rules! mouse_drag {
     }};
 }
 
-pub(crate) trait Tool: fmt::Display {
-    fn load_opts(&mut self, _: &Options) {
-        {}
-    }
-
-    fn on_event(&mut self, _: &mut EditorCtx<'_>, _: &Event) -> Option<EventResult> {
-        None
-    }
-}
-
-#[derive(Copy, Clone, Default, Debug)]
-pub(crate) struct BoxTool {
-    origin: Option<Vec2>,
-    target: Option<Vec2>,
-}
-
-impl fmt::Display for BoxTool {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Box")
-    }
-}
-
-impl Tool for BoxTool {
+macro_rules! fn_on_event_drag {
+    () => {
     fn on_event(&mut self, ctx: &mut EditorCtx<'_>, event: &Event) -> Option<EventResult> {
         let (pos, event) = mouse_drag!(ctx, event);
 
@@ -96,6 +75,31 @@ impl Tool for BoxTool {
 
         CONSUMED
     }
+    }
+}
+
+pub(crate) trait Tool: fmt::Display {
+    fn load_opts(&mut self, _: &Options) {
+        {}
+    }
+
+    fn on_event(&mut self, ctx: &mut EditorCtx<'_>, e: &Event) -> Option<EventResult>;
+}
+
+#[derive(Copy, Clone, Default, Debug)]
+pub(crate) struct BoxTool {
+    origin: Option<Vec2>,
+    target: Option<Vec2>,
+}
+
+impl fmt::Display for BoxTool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Box")
+    }
+}
+
+impl Tool for BoxTool {
+    fn_on_event_drag!();
 }
 
 impl BoxTool {
@@ -133,33 +137,7 @@ impl Tool for LineTool {
         self.snap45 = opts.line_snap45;
     }
 
-    fn on_event(&mut self, ctx: &mut EditorCtx<'_>, event: &Event) -> Option<EventResult> {
-        let (pos, event) = mouse_drag!(ctx, event);
-
-        match event {
-            Press(Left) => {
-                self.origin = Some(pos);
-                self.target = Some(pos);
-                ctx.preview(|buf| self.render(buf));
-            }
-
-            Hold(Left) => {
-                self.target = Some(pos);
-                ctx.preview(|buf| self.render(buf));
-            }
-
-            Release(Left) => {
-                self.target = Some(pos);
-                ctx.clobber(|buf| self.render(buf));
-                self.origin = None;
-                self.target = None;
-            }
-
-            _ => return None,
-        }
-
-        CONSUMED
-    }
+    fn_on_event_drag!();
 }
 
 impl LineTool {
@@ -195,33 +173,7 @@ impl Tool for ArrowTool {
         self.snap45 = opts.line_snap45;
     }
 
-    fn on_event(&mut self, ctx: &mut EditorCtx<'_>, event: &Event) -> Option<EventResult> {
-        let (pos, event) = mouse_drag!(ctx, event);
-
-        match event {
-            Press(Left) => {
-                self.origin = Some(pos);
-                self.target = Some(pos);
-                ctx.preview(|buf| self.render(buf));
-            }
-
-            Hold(Left) => {
-                self.target = Some(pos);
-                ctx.preview(|buf| self.render(buf));
-            }
-
-            Release(Left) => {
-                self.target = Some(pos);
-                ctx.clobber(|buf| self.render(buf));
-                self.origin = None;
-                self.target = None;
-            }
-
-            _ => return None,
-        }
-
-        CONSUMED
-    }
+    fn_on_event_drag!();
 }
 
 impl ArrowTool {
