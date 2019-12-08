@@ -8,7 +8,7 @@ Install a [binary package](https://github.com/nytopop/askii/releases), or use `c
 # Compilation
 Use `cargo`. The binary dynamically links against `libncursesw.so.6`, so make sure it is available.
 
-Alternatively, the [`Makefile`](Makefile) can be used to build a stripped binary and DEB / RPM packages.
+Alternatively, the [`Makefile`](Makefile) can be used to build a binary and DEB / RPM packages.
 
 ```
 cd askii && make
@@ -19,7 +19,6 @@ The produced artifacts will be located in `askii/dist`.
 It requires:
 
 - [GNU Make](https://www.gnu.org/software/make/)
-- [GNU Binutils](https://www.gnu.org/software/binutils/)
 - [jq](https://stedolan.github.io/jq/)
 - [fpm](https://github.com/jordansissel/fpm)
 

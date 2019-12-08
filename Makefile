@@ -4,25 +4,26 @@ DESCRIPTION := $(shell cargo read-manifest | jq ".description")
 AUTHOR := $(shell cargo read-manifest | jq ".authors[]")
 
 DIST=dist
-BIN := $(shell echo "$(DIST)/bin/$(NAME)")
-DEB := $(shell echo "$(DIST)/$(NAME)_$(VERSION)_amd64.deb")
-RPM := $(shell echo "$(DIST)/$(NAME)-$(VERSION)-1.x86_64.rpm")
+BIN=$(DIST)/bin/$(NAME)
+DEB=$(DIST)/$(NAME)_$(VERSION)_amd64.deb
+RPM=$(DIST)/$(NAME)-$(VERSION)-1.x86_64.rpm
 
 .PHONY: all
 all: $(BIN) $(DEB) $(RPM)
 
-.PHONY: $(BIN)
 $(BIN):
 	cargo build --release
 	mkdir -p $(DIST)/bin
 	cp target/release/$(NAME) $(BIN)
-	strip $(BIN)
 
 $(DEB): $(BIN)
 	cd $(DIST) && fpm -s dir -t deb --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d libncurses6 -d libc6 --license MIT -f --deb-priority optional --deb-no-default-config-files bin/$(NAME)
 
 $(RPM): $(BIN)
 	cd $(DIST) && fpm -s dir -t rpm --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d "ncurses >= 6" --license MIT -f bin/$(NAME)
+
+.PHONY: build
+build: $(BIN)
 
 .PHONY: distclean
 distclean:
