@@ -79,9 +79,7 @@ macro_rules! fn_on_event_drag {
 }
 
 pub(crate) trait Tool: fmt::Display {
-    fn load_opts(&mut self, _: &Options) {
-        {}
-    }
+    fn load_opts(&mut self, _: &Options) {}
 
     fn on_event(&mut self, ctx: &mut EditorCtx<'_>, e: &Event) -> Option<EventResult>;
 }
