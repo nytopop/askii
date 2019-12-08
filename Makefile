@@ -43,3 +43,14 @@ dev-install:
 .PHONY: install
 install:
 	cargo install --path . --force
+
+.PHONY: release
+release:
+	$(eval TOKEN := $(shell cat ~/.github-token-askii))
+	cargo publish
+	git tag -f v$(VERSION)
+	git push --tags
+	GITHUB_TOKEN=$(TOKEN) && gothub release --user nytopop --repo askii --tag v$(VERSION)
+	GITHUB_TOKEN=$(TOKEN) && gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(BIN) --file $(BIN)
+	GITHUB_TOKEN=$(TOKEN) && gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(DEB) --file $(DEB)
+	GITHUB_TOKEN=$(TOKEN) && gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(RPM) --file $(RPM)
