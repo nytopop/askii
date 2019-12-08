@@ -22,4 +22,5 @@ line_drawing = "0.8.0"
 #version = "0.13.1-alpha.0" # github
 #git = "https://github.com/gyscos/cursive.git"
 version = "0.13.0" 
+default-features = false
 features = ["pancurses-backend", "unstable_scroll"]
