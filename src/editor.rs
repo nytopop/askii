@@ -861,12 +861,10 @@ impl Buffer {
                 (x, y) if x > 0 && y > 0 => target.map(|v| v - delta),
                 _ => origin,
             }
+        } else if let Some('-') = self.getv(target) {
+            Vec2::new(target.x, origin.y)
         } else {
-            if let Some('-') = self.getv(target) {
-                Vec2::new(target.x, origin.y)
-            } else {
-                Vec2::new(origin.x, target.y)
-            }
+            Vec2::new(origin.x, target.y)
         }
     }
 }
