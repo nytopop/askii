@@ -3,7 +3,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 use super::{
-    editor::{diff, line_slope, Buffer, EditorCtx, CONSUMED},
+    editor::{Buffer, EditorCtx, CONSUMED},
     Options,
 };
 use cursive::{
@@ -166,30 +166,10 @@ impl LineTool {
     fn render(&self, buf: &mut Buffer) {
         let (origin, target) = option!(self.origin, self.target);
 
-        // TODO: move snap logic to impl Buffer
-        let mid = if self.snap45 {
-            line_midpoint_45(origin, target)
-        } else {
-            match buf.getv(target) {
-                Some('-') => Vec2::new(target.x, origin.y),
-                _ => Vec2::new(origin.x, target.y),
-            }
-        };
+        let mid = buf.snap_midpoint(self.snap45, origin, target);
 
         buf.draw_line(origin, mid);
         buf.draw_line(mid, target);
-    }
-}
-
-fn line_midpoint_45(origin: Vec2, target: Vec2) -> Vec2 {
-    let delta = min(diff(origin.y, target.y), diff(origin.x, target.x));
-
-    match line_slope(origin, target).pair() {
-        (x, y) if x < 0 && y < 0 => target.map(|v| v + delta),
-        (x, y) if x > 0 && y < 0 => target.map_x(|x| x - delta).map_y(|y| y + delta),
-        (x, y) if x < 0 && y > 0 => target.map_x(|x| x + delta).map_y(|y| y - delta),
-        (x, y) if x > 0 && y > 0 => target.map(|v| v - delta),
-        _ => origin,
     }
 }
 
@@ -248,14 +228,7 @@ impl ArrowTool {
     fn render(&self, buf: &mut Buffer) {
         let (origin, target) = option!(self.origin, self.target);
 
-        let mid = if self.snap45 {
-            line_midpoint_45(origin, target)
-        } else {
-            match buf.getv(target) {
-                Some('-') => Vec2::new(target.x, origin.y),
-                _ => Vec2::new(origin.x, target.y),
-            }
-        };
+        let mid = buf.snap_midpoint(self.snap45, origin, target);
 
         if mid != target {
             buf.draw_line(origin, mid);

@@ -135,16 +135,6 @@ fn drag(x: usize, new: usize, old: usize) -> usize {
     }
 }
 
-/// Returns `true` if `a` is within `w` of `b` (inclusive).
-pub(crate) fn within(w: usize, a: usize, b: usize) -> bool {
-    diff(a, b) <= w
-}
-
-/// Returns the absolute difference between `a` and `b`.
-pub(crate) fn diff(a: usize, b: usize) -> usize {
-    (a as isize - b as isize).abs() as usize
-}
-
 pub(crate) struct EditorCtx<'a>(&'a mut ScrollView<Editor>);
 
 impl<'a> EditorCtx<'a> {
@@ -857,6 +847,28 @@ impl Buffer {
         self.draw_line(origin, target);
         self.setv(true, target, tip);
     }
+
+    /// Returns the midpoint between a pair of 45 or 90 degree lines passing through `origin`
+    /// and `target`.
+    pub(crate) fn snap_midpoint(&self, snap45: bool, origin: Vec2, target: Vec2) -> Vec2 {
+        if snap45 {
+            let delta = min(diff(origin.y, target.y), diff(origin.x, target.x));
+
+            match line_slope(origin, target).pair() {
+                (x, y) if x < 0 && y < 0 => target.map(|v| v + delta),
+                (x, y) if x > 0 && y < 0 => target.map_x(|x| x - delta).map_y(|y| y + delta),
+                (x, y) if x < 0 && y > 0 => target.map_x(|x| x + delta).map_y(|y| y - delta),
+                (x, y) if x > 0 && y > 0 => target.map(|v| v - delta),
+                _ => origin,
+            }
+        } else {
+            if let Some('-') = self.getv(target) {
+                Vec2::new(target.x, origin.y)
+            } else {
+                Vec2::new(origin.x, target.y)
+            }
+        }
+    }
 }
 
 /// Returns the overlap precedence for `c`.
@@ -871,10 +883,20 @@ fn precedence(c: char) -> usize {
     }
 }
 
+/// Returns `true` if `a` is within `w` of `b` (inclusive).
+fn within(w: usize, a: usize, b: usize) -> bool {
+    diff(a, b) <= w
+}
+
+/// Returns the absolute difference between `a` and `b`.
+fn diff(a: usize, b: usize) -> usize {
+    (a as isize - b as isize).abs() as usize
+}
+
 /// Returns the slope between points at `origin` and `target`.
 ///
 /// The resulting fraction will be reduced to its simplest terms.
-pub(crate) fn line_slope<P: Into<XY<isize>>>(origin: P, target: P) -> XY<isize> {
+fn line_slope<P: Into<XY<isize>>>(origin: P, target: P) -> XY<isize> {
     let xy = target.into() - origin;
 
     match gcd(xy.x, xy.y) {
@@ -884,7 +906,7 @@ pub(crate) fn line_slope<P: Into<XY<isize>>>(origin: P, target: P) -> XY<isize> 
 }
 
 /// Returns the greatest common denominator between `a` and `b`.
-pub(crate) fn gcd(mut a: isize, mut b: isize) -> isize {
+fn gcd(mut a: isize, mut b: isize) -> isize {
     while b != 0 {
         let t = b;
         b = a % b;
