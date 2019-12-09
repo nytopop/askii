@@ -66,7 +66,7 @@ release: distclean all
 	git tag $(TAG)
 	git push --tags
 	GITHUB_TOKEN=$(TOKEN) TAG=$(TAG) CHANGELOG=$(CHANGELOG) ./release.sh
-	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(BIN) -f $(BINPATH) -l "linux binary"
-	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(DEB) -f $(DEBPATH) -l "deb package"
-	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(RPM) -f $(RPMPATH) -l "rpm package"
-	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(PAC) -f $(PACPATH) -l "pacman package"
+	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(BIN) -f $(BINPATH)
+	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(DEB) -f $(DEBPATH)
+	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(RPM) -f $(RPMPATH)
+	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(PAC) -f $(PACPATH)
