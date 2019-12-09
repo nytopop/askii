@@ -3,9 +3,9 @@
 TUI based ASCII diagram editor.
 
 # Installation
-Install a [binary release](https://github.com/nytopop/askii/releases), or use `cargo install askii` to compile the latest source from [crates.io](https://crates.io/crates/askii).
+Install a [binary release](https://github.com/nytopop/askii/releases), or use `cargo install askii` to compile the latest source release from [crates.io](https://crates.io/crates/askii).
 
-To use askii on Windows or Mac, compile it from source. Cross compilation of Rust programs that import C libraries (ncurses) is difficult at best, so binary releases are not provided here.
+To use askii on Windows or Mac, you'll need to compile it from source. Cross compilation of Rust programs that import C libraries (ncurses) is difficult at best, so binary releases are not provided here.
 
 # Compilation
 Use `cargo`. The binary links against `libncursesw.so.6`, so make sure it is available during compilation.
