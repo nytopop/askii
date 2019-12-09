@@ -58,7 +58,7 @@ install:
 .PHONY: release
 release: distclean all
 	$(eval TOKEN := $(shell cat ~/.github-token-askii))
-	$(eval CHANGES := $(shell git log $(git describe --tags --abbrev=0)..HEAD --oneline))
+	$(eval CHANGES := $(shell git log $(shell git describe --tags --abbrev=0)..HEAD --oneline))
 	cargo publish
 	git tag v$(VERSION)
 	git push --tags
