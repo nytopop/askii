@@ -336,7 +336,7 @@ impl Editor {
 
     /// Returns the active tool as a human readable string.
     pub(crate) fn active_tool(&self) -> String {
-        format!("{{ {} }}", self.tool.as_ref().unwrap())
+        format!("active: {}", self.tool.as_ref().unwrap())
     }
 
     /// Returns the current save path.
@@ -364,7 +364,7 @@ impl Editor {
             .and_then(Buffer::read_from);
 
         let buffer = match buffer {
-            Err(er) if er.kind() == ErrorKind::NotFound => None,
+            Err(e) if e.kind() == ErrorKind::NotFound => None,
             r => Some(r?),
         };
 
@@ -850,6 +850,7 @@ impl Buffer {
 
     /// Returns the midpoint between a pair of 45 or 90 degree lines passing through `origin`
     /// and `target`.
+    // TODO: if target isn't _ or |, prefer the path that has fewest intersections
     pub(crate) fn snap_midpoint(&self, snap45: bool, origin: Vec2, target: Vec2) -> Vec2 {
         if snap45 {
             let delta = min(diff(origin.y, target.y), diff(origin.x, target.x));
