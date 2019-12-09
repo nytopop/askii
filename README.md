@@ -1,4 +1,6 @@
-[![askii](askii.png)](https://github.com/nytopop/askii)
+<p align="center">
+  <img src="askii.png" alt="logo">
+</p>
 
 TUI based ASCII diagram editor.
 
