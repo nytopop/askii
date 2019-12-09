@@ -5,8 +5,10 @@ A tool for drawing ASCII diagrams.
 # Installation
 Install a [binary package](https://github.com/nytopop/askii/releases), or use `cargo install askii` to compile the latest source from [crates.io](https://crates.io/crates/askii).
 
+To use askii on Windows or Mac, compile it from source. Cross compilation of Rust programs that import C libraries (ncurses) is difficult at best, so binary packages are not provided here.
+
 # Compilation
-Use `cargo`. The binary dynamically links against `libncursesw.so.6`, so make sure it is available.
+Use `cargo`. The binary links against `libncursesw.so.6`, so make sure it is available during compilation.
 
 Alternatively, the [`Makefile`](Makefile) can be used to build a binary and deb / rpm / pacman packages.
 
