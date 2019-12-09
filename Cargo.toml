@@ -1,7 +1,7 @@
 [package]
 name = "askii"
 description = "TUI based ASCII diagram editor."
-version = "0.2.5"
+version = "0.2.6"
 authors = ["nytopop <ericizoita@gmail.com>"]
 edition = "2018"
 
