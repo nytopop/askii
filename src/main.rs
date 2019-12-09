@@ -109,10 +109,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .leaf(S45, editor_tool::<ArrowTool, _>(|o| o.line_snap45 = true)),
         )
         .add_leaf("Text", editor_tool::<TextTool, _>(|_| ()))
+        .add_leaf("Erase", editor_tool::<EraseTool, _>(|_| ()))
         .add_delimiter()
         .add_leaf(editor.active_tool(), |_| ());
 
-    // * * c d e f g * i j k * * * * p * * * * * v w x y z
+    // * * c d * f g * i j k * * * * p * * * * * v w x y z
     // * B C D E F G H I J K * M N O P Q R * T U V W X Y Z
 
     siv.set_autohide_menu(false);
@@ -138,6 +139,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     siv.add_global_callback('a', editor_tool::<ArrowTool, _>(|o| o.line_snap45 = false));
     siv.add_global_callback('A', editor_tool::<ArrowTool, _>(|o| o.line_snap45 = true));
     siv.add_global_callback('t', editor_tool::<TextTool, _>(|_| ()));
+    siv.add_global_callback('e', editor_tool::<EraseTool, _>(|_| ()));
 
     // Help
     siv.add_global_callback('h', editor_help);
@@ -278,12 +280,13 @@ fn editor_help(siv: &mut Cursive) {
         "(m) Trim Margins",
         "",
         "# Tools",
-        "(b) Box Tool",
-        "(l) Line Tool: Snap 90",
-        "(L) Line Tool: Snap 45",
-        "(a) Arrow Tool: Snap 90",
-        "(A) Arrow Tool: Snap 45",
-        "(t) Text Tool",
+        "(b) Box",
+        "(l) Line: Snap 90",
+        "(L) Line: Snap 45",
+        "(a) Arrow: Snap 90",
+        "(A) Arrow: Snap 45",
+        "(t) Text",
+        "(e) Erase",
         "",
         "(h) Help",
     ]

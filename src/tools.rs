@@ -3,7 +3,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 use super::{
-    editor::{Buffer, EditorCtx, CONSUMED},
+    editor::{Buffer, Char, EditorCtx, CONSUMED},
     Options,
 };
 use cursive::{
@@ -46,8 +46,11 @@ macro_rules! mouse_drag {
     }};
 }
 
+/// Provides an implementation of `Tool::on_event` for tools that contain an `origin`
+/// and `target` field of type `Option<Vec2>`. The implementation performs basic left
+/// mouse drag handling, calling the argument closure when relevant events occur.
 macro_rules! fn_on_event_drag {
-    () => {
+    ($render:expr) => {
     fn on_event(&mut self, ctx: &mut EditorCtx<'_>, event: &Event) -> Option<EventResult> {
         let (pos, event) = mouse_drag!(ctx, event);
 
@@ -55,17 +58,17 @@ macro_rules! fn_on_event_drag {
             Press(Left) => {
                 self.origin = Some(pos);
                 self.target = Some(pos);
-                ctx.preview(|buf| self.render(buf));
+                ctx.preview(|buf| $render(self, buf));
             }
 
             Hold(Left) => {
                 self.target = Some(pos);
-                ctx.preview(|buf| self.render(buf));
+                ctx.preview(|buf| $render(self, buf));
             }
 
             Release(Left) => {
                 self.target = Some(pos);
-                ctx.clobber(|buf| self.render(buf));
+                ctx.clobber(|buf| $render(self, buf));
                 self.origin = None;
                 self.target = None;
             }
@@ -97,12 +100,8 @@ impl fmt::Display for BoxTool {
 }
 
 impl Tool for BoxTool {
-    fn_on_event_drag!();
-}
-
-impl BoxTool {
-    fn render(&self, buf: &mut Buffer) {
-        let (origin, target) = option!(self.origin, self.target);
+    fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
+        let (origin, target) = option!(t.origin, t.target);
 
         let r = Rect::from_corners(origin, target);
 
@@ -110,7 +109,7 @@ impl BoxTool {
         buf.draw_line(r.top_right(), r.bottom_right());
         buf.draw_line(r.bottom_right(), r.bottom_left());
         buf.draw_line(r.bottom_left(), r.top_left());
-    }
+    });
 }
 
 #[derive(Copy, Clone, Default, Debug)]
@@ -135,18 +134,14 @@ impl Tool for LineTool {
         self.snap45 = opts.line_snap45;
     }
 
-    fn_on_event_drag!();
-}
+    fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
+        let (origin, target) = option!(t.origin, t.target);
 
-impl LineTool {
-    fn render(&self, buf: &mut Buffer) {
-        let (origin, target) = option!(self.origin, self.target);
-
-        let mid = buf.snap_midpoint(self.snap45, origin, target);
+        let mid = buf.snap_midpoint(t.snap45, origin, target);
 
         buf.draw_line(origin, mid);
         buf.draw_line(mid, target);
-    }
+    });
 }
 
 #[derive(Copy, Clone, Default, Debug)]
@@ -171,14 +166,10 @@ impl Tool for ArrowTool {
         self.snap45 = opts.line_snap45;
     }
 
-    fn_on_event_drag!();
-}
+    fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
+        let (origin, target) = option!(t.origin, t.target);
 
-impl ArrowTool {
-    fn render(&self, buf: &mut Buffer) {
-        let (origin, target) = option!(self.origin, self.target);
-
-        let mid = buf.snap_midpoint(self.snap45, origin, target);
+        let mid = buf.snap_midpoint(t.snap45, origin, target);
 
         if mid != target {
             buf.draw_line(origin, mid);
@@ -186,7 +177,7 @@ impl ArrowTool {
         } else {
             buf.draw_arrow(origin, target);
         }
-    }
+    });
 }
 
 #[derive(Clone, Debug)]
@@ -326,4 +317,39 @@ impl TextTool {
 
         buf.set_cursor(self.cursor + origin);
     }
+}
+
+#[derive(Copy, Clone, Default, Debug)]
+pub(crate) struct EraseTool {
+    origin: Option<Vec2>,
+    target: Option<Vec2>,
+}
+
+impl fmt::Display for EraseTool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Erase")
+    }
+}
+
+impl Tool for EraseTool {
+    fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
+        let (origin, target) = option!(t.origin, t.target);
+
+        let r = Rect::from_corners(origin, target);
+
+        let cells: Vec<_> = buf
+            .iter_within(r.top_left(), r.size())
+            .flat_map(|c| match c {
+                Char::Clean(cell) => Some(cell),
+                Char::Dirty(cell) => Some(cell),
+                _ => None,
+            })
+            .filter(|cell| !cell.is_whitespace())
+            .map(|cell| cell.pos())
+            .collect();
+
+        for pos in cells {
+            buf.setv(true, pos, ' ');
+        }
+    });
 }

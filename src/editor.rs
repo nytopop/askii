@@ -497,13 +497,23 @@ pub(crate) struct Buffer {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
-struct Cell {
+pub(crate) struct Cell {
     pos: Vec2,
     c: char,
 }
 
+impl Cell {
+    pub(crate) fn pos(&self) -> Vec2 {
+        self.pos
+    }
+
+    pub(crate) fn is_whitespace(&self) -> bool {
+        self.c.is_whitespace()
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Eq)]
-enum Char {
+pub(crate) enum Char {
     Clean(Cell),
     Dirty(Cell),
     Cursor(Cell),
@@ -600,7 +610,11 @@ impl Buffer {
 
     /// Returns an iterator over all characters within the viewport formed by `offset`
     /// and `size`.
-    fn iter_within<'a>(&'a self, offset: Vec2, size: Vec2) -> impl Iterator<Item = Char> + 'a {
+    pub(crate) fn iter_within<'a>(
+        &'a self,
+        offset: Vec2,
+        size: Vec2,
+    ) -> impl Iterator<Item = Char> + 'a {
         let area = Rect::from_corners(offset, offset + size);
 
         self.chars
