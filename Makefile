@@ -58,10 +58,11 @@ install:
 .PHONY: release
 release: distclean all
 	$(eval TOKEN := $(shell cat ~/.github-token-askii))
+	$(eval CHANGES := $(shell git log $(git describe --tags --abbrev=0)..HEAD --oneline))
 	cargo publish
 	git tag v$(VERSION)
 	git push --tags
-	GITHUB_TOKEN=$(TOKEN) gothub release --user nytopop --repo askii --tag v$(VERSION)
+	GITHUB_TOKEN=$(TOKEN) gothub release --user nytopop --repo askii --tag v$(VERSION) --description "$(CHANGES)"
 	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(BIN) --file $(BINPATH)
 	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(DEB) --file $(DEBPATH)
 	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(RPM) --file $(RPMPATH)
