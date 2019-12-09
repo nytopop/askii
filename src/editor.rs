@@ -107,10 +107,10 @@ macro_rules! intercept_pan {
                     let i = $ctx.0.inner_size();
 
                     if pos.x < old.x && within((old.x - pos.x + 1) * 4, p.right(), i.x) {
-                        $ctx.0.get_inner_mut().bounds.x += old.x - pos.x;
+                        $ctx.0.get_inner_mut().canvas.x += old.x - pos.x;
                     }
                     if pos.y < old.y && within((old.y - pos.y + 1) * 2, p.bottom(), i.y) {
-                        $ctx.0.get_inner_mut().bounds.y += old.y - pos.y;
+                        $ctx.0.get_inner_mut().canvas.y += old.y - pos.y;
                     }
 
                     return CONSUMED;
@@ -148,9 +148,9 @@ impl<'a> EditorCtx<'a> {
         intercept_scrollbar!(self, event);
         intercept_pan!(self, event);
 
-        let mut tool = self.0.get_inner_mut().tool.take().unwrap();
+        let mut tool = self.0.get_inner_mut().active_tool.take().unwrap();
         let res = tool.on_event(self, event);
-        self.0.get_inner_mut().tool = Some(tool);
+        self.0.get_inner_mut().active_tool = Some(tool);
 
         res
     }
@@ -199,11 +199,11 @@ impl<'a> EditorCtx<'a> {
         // order to truly fix the issue, we need to implement scrolling as a function of
         // the editor itself.
         let editor = self.0.get_inner_mut();
-        if pos.x >= editor.bounds.x {
-            editor.bounds.x += max(step_x, pos.x - editor.bounds.x);
+        if pos.x >= editor.canvas.x {
+            editor.canvas.x += max(step_x, pos.x - editor.canvas.x);
         }
-        if pos.y >= editor.bounds.y {
-            editor.bounds.y += max(step_y, pos.y - editor.bounds.y);
+        if pos.y >= editor.canvas.y {
+            editor.canvas.y += max(step_y, pos.y - editor.canvas.y);
         }
     }
 
@@ -220,15 +220,15 @@ impl<'a> EditorCtx<'a> {
         let editor = self.0.get_inner_mut();
 
         let snapshot = editor.buffer.snapshot();
-        editor.history.push(snapshot);
+        editor.undo_history.push(snapshot);
 
         editor.buffer.discard_edits();
         render(&mut editor.buffer);
         editor.buffer.flush_edits();
         editor.buffer.drop_cursor();
 
-        if editor.history.last().unwrap() == &editor.buffer {
-            editor.history.pop();
+        if editor.undo_history.last().unwrap() == &editor.buffer {
+            editor.undo_history.pop();
         } else {
             editor.dirty = true;
         }
@@ -243,15 +243,15 @@ impl<'a> EditorCtx<'a> {
 }
 
 pub(crate) struct Editor {
-    opts: Options,               // config options
-    buffer: Buffer,              // editing buffer
-    lsave: Buffer,               // state of buffer on disk
-    dirty: bool,                 // buffer == lsave
-    history: Vec<Buffer>,        // undo history
-    undone: Vec<Buffer>,         // undo undo history
-    tool: Option<Box<dyn Tool>>, // active tool
-    bounds: Vec2,                // bounds of the canvas, if adjusted
-    rendered: String,            // latest render (kept for the allocation)
+    opts: Options,
+    buffer: Buffer,
+    lsave: Buffer,
+    dirty: bool,
+    undo_history: Vec<Buffer>,
+    redo_history: Vec<Buffer>,
+    active_tool: Option<Box<dyn Tool>>,
+    canvas: Vec2,
+    rendered: String,
 }
 
 impl View for Editor {
@@ -273,11 +273,11 @@ impl View for Editor {
         let buf_bounds = self.buffer.bounds();
 
         let bounds = Vec2 {
-            x: max(size.x, max(buf_bounds.x, self.bounds.x)),
-            y: max(size.y, max(buf_bounds.y, self.bounds.y)),
+            x: max(size.x, max(buf_bounds.x, self.canvas.x)),
+            y: max(size.y, max(buf_bounds.y, self.canvas.y)),
         };
 
-        self.bounds = bounds;
+        self.canvas = bounds;
 
         bounds
     }
@@ -303,10 +303,10 @@ impl Editor {
             buffer: Buffer::default(),
             lsave: Buffer::default(),
             dirty: false,
-            history: vec![],
-            undone: vec![],
-            tool: Some(Box::new(tool)),
-            bounds: Vec2::new(0, 0),
+            undo_history: vec![],
+            redo_history: vec![],
+            active_tool: Some(Box::new(tool)),
+            canvas: Vec2::new(0, 0),
             rendered: String::default(),
         };
 
@@ -320,7 +320,7 @@ impl Editor {
     /// Mutate the loaded options with `apply`.
     pub(crate) fn mut_opts<F: FnOnce(&mut Options)>(&mut self, apply: F) {
         apply(&mut self.opts);
-        if let Some(tool) = self.tool.as_mut() {
+        if let Some(tool) = self.active_tool.as_mut() {
             tool.load_opts(&self.opts);
         }
     }
@@ -335,12 +335,12 @@ impl Editor {
         self.buffer.discard_edits();
         self.buffer.drop_cursor();
         tool.load_opts(&self.opts);
-        self.tool = Some(Box::new(tool));
+        self.active_tool = Some(Box::new(tool));
     }
 
     /// Returns the active tool as a human readable string.
     pub(crate) fn active_tool(&self) -> String {
-        format!("active: {}", self.tool.as_ref().unwrap())
+        format!("active: {}", self.active_tool.as_ref().unwrap())
     }
 
     /// Returns the current save path.
@@ -354,9 +354,9 @@ impl Editor {
         self.buffer.clear();
         self.lsave.clear();
         self.dirty = false;
-        self.history.clear();
-        self.undone.clear();
-        self.bounds = Vec2::new(0, 0);
+        self.undo_history.clear();
+        self.redo_history.clear();
+        self.canvas = Vec2::new(0, 0);
     }
 
     /// Open the file at `path`, discarding any unsaved changes to the current file, if
@@ -419,8 +419,8 @@ impl Editor {
 
     /// Render to `file`, performing whitespace cleanup if enabled.
     fn render_to(&mut self, mut file: File) -> io::Result<()> {
-        self.history.push(self.buffer.clone());
-        self.bounds = Vec2::new(0, 0);
+        self.undo_history.push(self.buffer.clone());
+        self.canvas = Vec2::new(0, 0);
         self.buffer.discard_edits();
 
         if self.opts.strip_margin_ws {
@@ -429,8 +429,8 @@ impl Editor {
             self.buffer.strip_trailing_whitespace();
         }
 
-        if self.history.last().unwrap() == &self.buffer {
-            self.history.pop();
+        if self.undo_history.last().unwrap() == &self.buffer {
+            self.undo_history.pop();
         }
 
         self.rendered.clear();
@@ -445,14 +445,14 @@ impl Editor {
 
     /// Trim all whitespace from margins.
     pub(crate) fn trim_margins(&mut self) {
-        self.history.push(self.buffer.clone());
+        self.undo_history.push(self.buffer.clone());
 
-        self.bounds = Vec2::new(0, 0);
+        self.canvas = Vec2::new(0, 0);
         self.buffer.discard_edits();
         self.buffer.strip_margin_whitespace();
 
-        if self.history.last().unwrap() == &self.buffer {
-            self.history.pop();
+        if self.undo_history.last().unwrap() == &self.buffer {
+            self.undo_history.pop();
         } else {
             self.dirty = true;
         }
@@ -463,10 +463,10 @@ impl Editor {
     /// Returns `false` if there was nothing to undo.
     pub(crate) fn undo(&mut self) -> bool {
         let undone = self
-            .history
+            .undo_history
             .pop()
             .map(|buffer| mem::replace(&mut self.buffer, buffer))
-            .map(|buffer| self.undone.push(buffer))
+            .map(|buffer| self.redo_history.push(buffer))
             .is_some();
 
         if undone {
@@ -481,10 +481,10 @@ impl Editor {
     /// Returns `false` if there was nothing to redo.
     pub(crate) fn redo(&mut self) -> bool {
         let redone = self
-            .undone
+            .redo_history
             .pop()
             .map(|buffer| mem::replace(&mut self.buffer, buffer))
-            .map(|buffer| self.history.push(buffer))
+            .map(|buffer| self.undo_history.push(buffer))
             .is_some();
 
         if redone {
