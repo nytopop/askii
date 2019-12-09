@@ -227,10 +227,10 @@ impl<'a> EditorCtx<'a> {
         editor.buffer.flush_edits();
         editor.buffer.drop_cursor();
 
-        if editor.history.last().unwrap() != &editor.buffer {
-            editor.buffer.mark_dirty();
-        } else {
+        if editor.history.last().unwrap() == &editor.buffer {
             editor.history.pop();
+        } else {
+            editor.dirty = true;
         }
     }
 
@@ -245,6 +245,8 @@ impl<'a> EditorCtx<'a> {
 pub(crate) struct Editor {
     opts: Options,               // config options
     buffer: Buffer,              // editing buffer
+    lsave: Buffer,               // state of buffer on disk
+    dirty: bool,                 // buffer == lsave
     history: Vec<Buffer>,        // undo history
     undone: Vec<Buffer>,         // undo undo history
     tool: Option<Box<dyn Tool>>, // active tool
@@ -299,6 +301,8 @@ impl Editor {
         let mut editor = Self {
             opts,
             buffer: Buffer::default(),
+            lsave: Buffer::default(),
+            dirty: false,
             history: vec![],
             undone: vec![],
             tool: Some(Box::new(tool)),
@@ -323,7 +327,7 @@ impl Editor {
 
     /// Returns `true` if the buffer has been modified since the last save.
     pub(crate) fn is_dirty(&self) -> bool {
-        self.buffer.is_dirty()
+        self.dirty
     }
 
     /// Set the active tool.
@@ -348,6 +352,8 @@ impl Editor {
     pub(crate) fn clear(&mut self) {
         self.opts.file = None;
         self.buffer.clear();
+        self.lsave.clear();
+        self.dirty = false;
         self.history.clear();
         self.undone.clear();
         self.bounds = Vec2::new(0, 0);
@@ -371,6 +377,7 @@ impl Editor {
         self.clear();
         self.opts.file = Some(path.as_ref().into());
         if let Some(buf) = buffer {
+            self.lsave = buf.clone();
             self.buffer = buf;
         }
 
@@ -394,7 +401,8 @@ impl Editor {
                 .open(path)?;
 
             self.render_to(file)?;
-            self.buffer.mark_clean();
+            self.lsave = self.buffer.clone();
+            self.dirty = false;
         }
 
         Ok(self.path().is_some())
@@ -435,7 +443,7 @@ impl Editor {
         Ok(())
     }
 
-    /// Trim whitespace from all margins.
+    /// Trim all whitespace from margins.
     pub(crate) fn trim_margins(&mut self) {
         self.history.push(self.buffer.clone());
 
@@ -445,6 +453,8 @@ impl Editor {
 
         if self.history.last().unwrap() == &self.buffer {
             self.history.pop();
+        } else {
+            self.dirty = true;
         }
     }
 
@@ -452,22 +462,36 @@ impl Editor {
     ///
     /// Returns `false` if there was nothing to undo.
     pub(crate) fn undo(&mut self) -> bool {
-        self.history
+        let undone = self
+            .history
             .pop()
             .map(|buffer| mem::replace(&mut self.buffer, buffer))
             .map(|buffer| self.undone.push(buffer))
-            .is_some()
+            .is_some();
+
+        if undone {
+            self.dirty = self.buffer != self.lsave;
+        }
+
+        undone
     }
 
     /// Redo the last undone buffer modification.
     ///
     /// Returns `false` if there was nothing to redo.
     pub(crate) fn redo(&mut self) -> bool {
-        self.undone
+        let redone = self
+            .undone
             .pop()
             .map(|buffer| mem::replace(&mut self.buffer, buffer))
             .map(|buffer| self.history.push(buffer))
-            .is_some()
+            .is_some();
+
+        if redone {
+            self.dirty = self.buffer != self.lsave;
+        }
+
+        redone
     }
 }
 
@@ -492,7 +516,6 @@ const S_W: (isize, isize) = (-1, 0);
 pub(crate) struct Buffer {
     chars: Vec<Vec<char>>,
     edits: Vec<Cell>,
-    dirty: bool,
     cursor: Option<Vec2>,
 }
 
@@ -527,7 +550,6 @@ impl Buffer {
                 .map(|lr| lr.map(|s| s.chars().collect()))
                 .collect::<io::Result<_>>()?,
             edits: vec![],
-            dirty: false,
             cursor: None,
         })
     }
@@ -537,7 +559,6 @@ impl Buffer {
         Self {
             chars: self.chars.clone(),
             edits: vec![],
-            dirty: self.dirty,
             cursor: None,
         }
     }
@@ -552,26 +573,10 @@ impl Buffer {
         self.cursor = None;
     }
 
-    /// Returns `true` if changes have been performed since the last call to `mark_clean`.
-    fn is_dirty(&self) -> bool {
-        self.dirty
-    }
-
-    /// Mark the buffer as clean.
-    fn mark_clean(&mut self) {
-        self.dirty = false;
-    }
-
-    /// Mark the buffer as dirty.
-    fn mark_dirty(&mut self) {
-        self.dirty = true;
-    }
-
     /// Clears all content in the buffer.
     fn clear(&mut self) {
         self.chars.clear();
         self.edits.clear();
-        self.dirty = false;
         self.cursor = None;
     }
 
