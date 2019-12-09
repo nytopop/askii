@@ -2,11 +2,13 @@
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
-//! A tool for drawing ASCII diagrams.
+//! TUI based ASCII diagram editor.
 // TODO: path mode for line and arrow
 // TODO: shapes (diamond, hexagon, parallelogram, trapezoid)
 // TODO: tools (resize, select)
 // TODO: think of a way to do tests (dummy backend + injected events?)
+// TODO: only store deltas in undo history
+// TODO: use an undo file
 extern crate cursive;
 extern crate lazy_static;
 extern crate line_drawing;

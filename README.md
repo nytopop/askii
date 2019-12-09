@@ -1,6 +1,6 @@
 [![askii](askii.png)](https://github.com/nytopop/askii)
 
-A tool for drawing ASCII diagrams.
+TUI based ASCII diagram editor.
 
 # Installation
 Install a [binary package](https://github.com/nytopop/askii/releases), or use `cargo install askii` to compile the latest source from [crates.io](https://crates.io/crates/askii).
