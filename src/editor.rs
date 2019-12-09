@@ -219,19 +219,11 @@ impl<'a> EditorCtx<'a> {
     pub(crate) fn clobber<R: FnOnce(&mut Buffer)>(&mut self, render: R) {
         let editor = self.0.get_inner_mut();
 
-        let snapshot = editor.buffer.snapshot();
-        editor.undo_history.push(snapshot);
-
-        editor.buffer.discard_edits();
-        render(&mut editor.buffer);
-        editor.buffer.flush_edits();
-        editor.buffer.drop_cursor();
-
-        if editor.undo_history.last().unwrap() == &editor.buffer {
-            editor.undo_history.pop();
-        } else {
-            editor.dirty = true;
-        }
+        editor.with_snapshot(|ed| {
+            render(&mut ed.buffer);
+            ed.buffer.flush_edits();
+            ed.buffer.drop_cursor();
+        });
     }
 
     /// Modify the edit buffer using `render`, without flushing any of changes.
@@ -419,19 +411,15 @@ impl Editor {
 
     /// Render to `file`, performing whitespace cleanup if enabled.
     fn render_to(&mut self, mut file: File) -> io::Result<()> {
-        self.undo_history.push(self.buffer.clone());
         self.canvas = Vec2::new(0, 0);
-        self.buffer.discard_edits();
 
-        if self.opts.strip_margin_ws {
-            self.buffer.strip_margin_whitespace();
-        } else if !self.opts.keep_trailing_ws {
-            self.buffer.strip_trailing_whitespace();
-        }
-
-        if self.undo_history.last().unwrap() == &self.buffer {
-            self.undo_history.pop();
-        }
+        self.with_snapshot(|ed| {
+            if ed.opts.strip_margin_ws {
+                ed.buffer.strip_margin_whitespace();
+            } else if !ed.opts.keep_trailing_ws {
+                ed.buffer.strip_trailing_whitespace();
+            }
+        });
 
         self.rendered.clear();
         self.rendered.extend(self.buffer.iter());
@@ -445,11 +433,23 @@ impl Editor {
 
     /// Trim all whitespace from margins.
     pub(crate) fn trim_margins(&mut self) {
-        self.undo_history.push(self.buffer.clone());
+        self.with_snapshot(|ed| {
+            ed.canvas = Vec2::new(0, 0);
+            ed.buffer.strip_margin_whitespace();
+        });
+    }
 
-        self.canvas = Vec2::new(0, 0);
+    /// Take a snapshot of the buffer, discard any pending edits, and run `apply`. If
+    /// the buffer was modified, mark it as dirty. Otherwise, remove the snapshot.
+    ///
+    /// Use this function to execute any buffer modification that should be saved in the
+    /// undo history.
+    fn with_snapshot<F: FnOnce(&mut Self)>(&mut self, apply: F) {
+        let snapshot = self.buffer.snapshot();
+        self.undo_history.push(snapshot);
         self.buffer.discard_edits();
-        self.buffer.strip_margin_whitespace();
+
+        apply(self);
 
         if self.undo_history.last().unwrap() == &self.buffer {
             self.undo_history.pop();
