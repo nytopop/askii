@@ -56,7 +56,7 @@ release: all
 	cargo publish
 	git tag v$(VERSION)
 	git push --tags
-	GITHUB_TOKEN=$(TOKEN) && gothub release --user nytopop --repo askii --tag v$(VERSION)
-	GITHUB_TOKEN=$(TOKEN) && gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(BIN) --file $(BINPATH)
-	GITHUB_TOKEN=$(TOKEN) && gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(DEB) --file $(DEBPATH)
-	GITHUB_TOKEN=$(TOKEN) && gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(RPM) --file $(RPMPATH)
+	GITHUB_TOKEN=$(TOKEN) gothub release --user nytopop --repo askii --tag v$(VERSION)
+	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(BIN) --file $(BINPATH)
+	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(DEB) --file $(DEBPATH)
+	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(RPM) --file $(RPMPATH)
