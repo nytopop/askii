@@ -1,7 +1,7 @@
 [package]
 name = "askii"
 description = "A tool for drawing ASCII diagrams."
-version = "0.2.1"
+version = "0.2.2"
 authors = ["nytopop <ericizoita@gmail.com>"]
 edition = "2018"
 

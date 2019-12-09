@@ -8,13 +8,15 @@ DIST=dist
 BIN=$(NAME)
 DEB=$(NAME)_$(VERSION)_amd64.deb
 RPM=$(NAME)-$(VERSION)-1.x86_64.rpm
+PAC=$(NAME)-$(VERSION)-1-x86_64.pkg.tar.xz
 
 BINPATH=$(DIST)/bin/$(BIN)
 DEBPATH=$(DIST)/$(DEB)
 RPMPATH=$(DIST)/$(RPM)
+PACPATH=$(DIST)/$(PAC)
 
 .PHONY: all
-all: $(BINPATH) $(DEBPATH) $(RPMPATH)
+all: $(BINPATH) $(DEBPATH) $(RPMPATH) $(PACPATH)
 
 $(BINPATH):
 	cargo build --release
@@ -26,6 +28,9 @@ $(DEBPATH): $(BINPATH)
 
 $(RPMPATH): $(BINPATH)
 	cd $(DIST) && fpm -s dir -t rpm --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d "ncurses >= 6" --license MIT -f bin/$(BIN)
+
+$(PACPATH): $(BINPATH)
+	cd $(DIST) && fpm -s dir -t pacman --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d "ncurses >= 6" --license MIT -f bin/$(BIN)
 
 .PHONY: build
 build: $(BINPATH)
@@ -60,3 +65,4 @@ release: all
 	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(BIN) --file $(BINPATH)
 	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(DEB) --file $(DEBPATH)
 	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(RPM) --file $(RPMPATH)
+	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(PAC) --file $(PACPATH)
