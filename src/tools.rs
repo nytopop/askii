@@ -39,7 +39,7 @@ macro_rules! mouse_drag {
         };
 
         if let Hold(Left) = event {
-            $ctx.scroll_to(pos, 3, 2);
+            $ctx.scroll_to(pos, 2, 2);
         }
 
         (pos, event)

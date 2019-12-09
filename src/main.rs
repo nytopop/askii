@@ -9,6 +9,7 @@
 // TODO: think of a way to do tests (dummy backend + injected events?)
 // TODO: only store deltas in undo history
 // TODO: use an undo file
+// TODO: show a proper modeline
 extern crate cursive;
 extern crate lazy_static;
 extern crate line_drawing;
@@ -28,8 +29,8 @@ use cursive::{
     event::{EventTrigger, Key},
     logger,
     menu::MenuTree,
-    view::Identifiable,
-    views::{Dialog, OnEventView, Panel, ScrollView},
+    view::{scroll::Scroller, Identifiable, View},
+    views::{Dialog, OnEventView, ScrollView},
     Cursive,
 };
 use log::debug;
@@ -146,23 +147,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Help
     siv.add_global_callback('h', editor_help);
 
-    siv.add_fullscreen_layer(Panel::new(
-        OnEventView::new(
-            ScrollView::new(editor)
-                .scroll_x(true)
-                .scroll_y(true)
-                .with_id(EDITOR_ID),
-        )
-        .on_pre_event_inner(EventTrigger::any(), |view, event| {
-            let mut scroll = view.get_mut();
-            let mut ctx = EditorCtx::new(&mut scroll);
-            ctx.on_event(event)
-        }),
-    ));
+    siv.add_fullscreen_layer(
+        OnEventView::new(new_scrollview(editor).with_id(EDITOR_ID)).on_pre_event_inner(
+            EventTrigger::any(),
+            |view, event| {
+                let mut scroll = view.get_mut();
+                let mut ctx = EditorCtx::new(&mut scroll);
+                ctx.on_event(event)
+            },
+        ),
+    );
 
     siv.run();
 
     Ok(())
+}
+
+fn new_scrollview<V: View>(inner: V) -> ScrollView<V> {
+    let mut scroll = ScrollView::new(inner).scroll_x(true).scroll_y(true);
+    scroll.get_scroller_mut().set_scrollbar_padding((0, 0));
+    scroll
 }
 
 fn editor_new(siv: &mut Cursive) {

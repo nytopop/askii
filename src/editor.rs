@@ -199,11 +199,12 @@ impl<'a> EditorCtx<'a> {
         // order to truly fix the issue, we need to implement scrolling as a function of
         // the editor itself.
         let editor = self.0.get_inner_mut();
-        if pos.x >= editor.canvas.x {
-            editor.canvas.x += max(step_x, pos.x - editor.canvas.x);
+
+        if pos.x + 1 >= editor.canvas.x {
+            editor.canvas.x += max(step_x, (pos.x + 1) - editor.canvas.x);
         }
-        if pos.y >= editor.canvas.y {
-            editor.canvas.y += max(step_y, pos.y - editor.canvas.y);
+        if pos.y + 1 >= editor.canvas.y {
+            editor.canvas.y += max(step_y, (pos.y + 1) - editor.canvas.y);
         }
     }
 
