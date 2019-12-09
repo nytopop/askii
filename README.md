@@ -1,5 +1,12 @@
 <p align="center">
-  <img src="askii.png" alt="logo">
+  <img src="askii.png" alt="logo"><br><br>
+  <a href="https://crates.io/crates/askii">
+    <img alt="Crates.io" src="https://img.shields.io/crates/v/askii?style=flat-square">
+  </a>
+  <!-- build status --!>
+  <a href="./LICENSE-MIT">
+    <img alt="Crates.io" src="https://img.shields.io/crates/l/askii?style=flat-square">
+  </a>
 </p>
 
 TUI based ASCII diagram editor.
