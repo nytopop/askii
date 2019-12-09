@@ -55,15 +55,18 @@ dev-install:
 install:
 	cargo install --path . --force
 
+CHANGELOG=$(DIST)/changelog
+TAG=v$(VERSION)
+
 .PHONY: release
 release: distclean all
 	$(eval TOKEN := $(shell cat ~/.github-token-askii))
-	$(eval CHANGES := $(shell git log $(shell git describe --tags --abbrev=0)..HEAD --oneline))
+	git log $(shell git describe --tags --abbrev=0)..HEAD --oneline > $(CHANGELOG)
 	cargo publish
-	git tag v$(VERSION)
+	git tag $(TAG)
 	git push --tags
-	GITHUB_TOKEN=$(TOKEN) gothub release --user nytopop --repo askii --tag v$(VERSION) --description "$(CHANGES)"
-	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(BIN) --file $(BINPATH)
-	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(DEB) --file $(DEBPATH)
-	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(RPM) --file $(RPMPATH)
-	GITHUB_TOKEN=$(TOKEN) gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(PAC) --file $(PACPATH)
+	GITHUB_TOKEN=$(TOKEN) TAG=$(TAG) CHANGELOG=$(CHANGELOG) ./release.sh
+	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(BIN) -f $(BINPATH) -l "linux binary"
+	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(DEB) -f $(DEBPATH) -l "deb package"
+	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(RPM) -f $(RPMPATH) -l "rpm package"
+	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(PAC) -f $(PACPATH) -l "pacman package"
