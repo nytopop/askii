@@ -4,26 +4,31 @@ DESCRIPTION := $(shell cargo read-manifest | jq ".description")
 AUTHOR := $(shell cargo read-manifest | jq ".authors[]")
 
 DIST=dist
-BIN=$(DIST)/bin/$(NAME)
-DEB=$(DIST)/$(NAME)_$(VERSION)_amd64.deb
-RPM=$(DIST)/$(NAME)-$(VERSION)-1.x86_64.rpm
+
+BIN=$(NAME)
+DEB=$(NAME)_$(VERSION)_amd64.deb
+RPM=$(NAME)-$(VERSION)-1.x86_64.rpm
+
+BINPATH=$(DIST)/bin/$(BIN)
+DEBPATH=$(DIST)/$(DEB)
+RPMPATH=$(DIST)/$(RPM)
 
 .PHONY: all
-all: $(BIN) $(DEB) $(RPM)
+all: $(BINPATH) $(DEBPATH) $(RPMPATH)
 
-$(BIN):
+$(BINPATH):
 	cargo build --release
 	mkdir -p $(DIST)/bin
-	cp target/release/$(NAME) $(BIN)
+	cp target/release/$(BIN) $(BINPATH)
 
-$(DEB): $(BIN)
-	cd $(DIST) && fpm -s dir -t deb --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d libncurses6 -d libc6 --license MIT -f --deb-priority optional --deb-no-default-config-files bin/$(NAME)
+$(DEBPATH): $(BINPATH)
+	cd $(DIST) && fpm -s dir -t deb --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d libncurses6 -d libc6 --license MIT -f --deb-priority optional --deb-no-default-config-files bin/$(BIN)
 
-$(RPM): $(BIN)
-	cd $(DIST) && fpm -s dir -t rpm --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d "ncurses >= 6" --license MIT -f bin/$(NAME)
+$(RPMPATH): $(BINPATH)
+	cd $(DIST) && fpm -s dir -t rpm --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d "ncurses >= 6" --license MIT -f bin/$(BIN)
 
 .PHONY: build
-build: $(BIN)
+build: $(BINPATH)
 
 .PHONY: distclean
 distclean:
@@ -49,9 +54,9 @@ install:
 release: all
 	$(eval TOKEN := $(shell cat ~/.github-token-askii))
 	cargo publish
-	git tag -f v$(VERSION)
+	git tag v$(VERSION)
 	git push --tags
 	GITHUB_TOKEN=$(TOKEN) && gothub release --user nytopop --repo askii --tag v$(VERSION)
-	GITHUB_TOKEN=$(TOKEN) && gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(BIN) --file $(BIN)
-	GITHUB_TOKEN=$(TOKEN) && gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(DEB) --file $(DEB)
-	GITHUB_TOKEN=$(TOKEN) && gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(RPM) --file $(RPM)
+	GITHUB_TOKEN=$(TOKEN) && gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(BIN) --file $(BINPATH)
+	GITHUB_TOKEN=$(TOKEN) && gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(DEB) --file $(DEBPATH)
+	GITHUB_TOKEN=$(TOKEN) && gothub upload --user nytopop --repo askii --tag v$(VERSION) --name $(RPM) --file $(RPMPATH)
