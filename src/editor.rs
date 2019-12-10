@@ -3,6 +3,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 use super::{tools::*, Options};
+use core::ops::Add;
 use cursive::{
     event::{Event, EventResult, MouseButton::*, MouseEvent::*},
     theme::ColorStyle,
@@ -12,7 +13,9 @@ use cursive::{
 };
 use lazy_static::lazy_static;
 use line_drawing::Bresenham;
+use num_traits::Zero;
 use parking_lot::Mutex;
+use pathfinding::directed::astar::astar;
 use std::{
     cmp::{max, min},
     fs::{self, File, OpenOptions},
@@ -812,8 +815,8 @@ impl Buffer {
         self.setv(false, target, PLUS);
     }
 
-    /// Draw an arrow from `origin` to `target`.
-    pub(crate) fn draw_arrow(&mut self, origin: Vec2, target: Vec2) {
+    /// Draw an arrow tip for an arrow from `origin` to `target`.
+    pub(crate) fn draw_arrow_tip(&mut self, origin: Vec2, target: Vec2) {
         let dec = |v: usize| v - 1;
         let inc = |v: usize| v + 1;
 
@@ -864,22 +867,25 @@ impl Buffer {
             (_, _) => PLUS,
         };
 
-        self.draw_line(origin, target);
         self.setv(true, target, tip);
     }
 
     /// Returns the midpoint between a pair of 45 or 90 degree lines passing through `origin`
     /// and `target`.
-    // TODO: if target isn't _ or |, prefer the path that has fewest intersections
     pub(crate) fn snap_midpoint(&self, snap45: bool, origin: Vec2, target: Vec2) -> Vec2 {
         if snap45 {
             let delta = min(diff(origin.y, target.y), diff(origin.x, target.x));
 
             match line_slope(origin, target).pair() {
+                // nw
                 (x, y) if x < 0 && y < 0 => target.map(|v| v + delta),
+                // ne
                 (x, y) if x > 0 && y < 0 => target.map_x(|x| x - delta).map_y(|y| y + delta),
+                // sw
                 (x, y) if x < 0 && y > 0 => target.map_x(|x| x + delta).map_y(|y| y - delta),
+                // se
                 (x, y) if x > 0 && y > 0 => target.map(|v| v - delta),
+
                 _ => origin,
             }
         } else if let Some('-') = self.getv(target) {
@@ -887,6 +893,139 @@ impl Buffer {
         } else {
             Vec2::new(origin.x, target.y)
         }
+    }
+
+    /// Draw the shortest path from `origin` to `target`. Returns the penultimate point
+    /// along that path.
+    pub(crate) fn draw_path(&mut self, origin: Vec2, target: Vec2) -> Vec2 {
+        // octile distance
+        let d = 1.0;
+        let d2 = 2.0f64.sqrt();
+
+        let mut path = astar(
+            &origin.pair(),
+            |&pos| self.neighbors(pos, d, d2),
+            |&pos| compute_distance(pos.into(), target, d, d2),
+            |xy| xy == &target.pair(),
+        )
+        .map(|(points, _)| points)
+        .unwrap()
+        .into_iter()
+        .map(Vec2::from)
+        .enumerate()
+        .peekable();
+
+        let decide = |i: usize, last: Vec2, pos: Vec2| -> char {
+            match line_slope(last, pos).pair() {
+                _ if i == 0 => PLUS,
+                (0, _) => PIPE,
+                (_, 0) => DASH,
+                (x, y) if (x > 0) == (y > 0) => GAID,
+                _ => DIAG,
+            }
+        };
+
+        let mut last = origin;
+        while let Some((i, pos)) = path.next() {
+            let mut c = decide(i, last, pos);
+
+            if let Some(next) = path.peek().map(|(i, next)| decide(*i, pos, *next)) {
+                if c != PLUS && next != c {
+                    c = PLUS;
+                }
+            }
+
+            if path.peek().is_some() {
+                last = pos;
+            }
+            self.setv(false, pos, c);
+        }
+
+        self.setv(false, target, PLUS);
+        last
+    }
+
+    /// Returns the coordinates neighboring `pos`, along with the cost to reach each one.
+    fn neighbors(&self, pos: (usize, usize), d: f64, d2: f64) -> Vec<((usize, usize), OrdFloat)> {
+        let cost = |pos: (usize, usize)| {
+            OrdFloat(if self.visible(pos.into()) {
+                d * 64.0
+            } else {
+                d
+            })
+        };
+
+        let costd = |pos: (usize, usize)| {
+            OrdFloat(if self.visible(pos.into()) {
+                d2 * 64.0
+            } else {
+                d2
+            })
+        };
+
+        let w = |(x, y)| (x - 1, y);
+        let n = |(x, y)| (x, y - 1);
+        let e = |(x, y)| (x + 1, y);
+        let s = |(x, y)| (x, y + 1);
+
+        let mut succ = Vec::with_capacity(8);
+        if pos.0 > 0 && pos.1 > 0 {
+            succ.push((n(w(pos)), costd(n(w(pos)))));
+        }
+        if pos.0 > 0 {
+            succ.push((w(pos), cost(w(pos))));
+            succ.push((s(w(pos)), costd(s(w(pos)))));
+        }
+        if pos.1 > 0 {
+            succ.push((n(pos), cost(n(pos))));
+            succ.push((n(e(pos)), costd(n(e(pos)))));
+        }
+        succ.push((e(pos), cost(e(pos))));
+        succ.push((s(pos), cost(s(pos))));
+        succ.push((s(e(pos)), costd(s(e(pos)))));
+
+        succ
+    }
+}
+
+/// Returns a distance heuristic between `src` and `dst`.
+fn compute_distance(src: Vec2, dst: Vec2, d: f64, d2: f64) -> OrdFloat {
+    let dx = (src.x as f64 - dst.x as f64).abs();
+    let dy = (src.y as f64 - dst.y as f64).abs();
+    let dist = d * (dx + dy) + (d2 - 2.0 * d) * if dx < dy { dx } else { dy };
+    OrdFloat(dist)
+}
+
+#[derive(PartialEq, PartialOrd, Copy, Clone)]
+struct OrdFloat(f64);
+
+impl Eq for OrdFloat {}
+
+impl Ord for OrdFloat {
+    #[inline]
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl Add<Self> for OrdFloat {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, other: Self) -> Self {
+        Self(self.0 + other.0)
+    }
+}
+
+impl Zero for OrdFloat {
+    #[inline]
+    fn zero() -> Self {
+        Self(0.0)
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.0 == 0.0
     }
 }
 

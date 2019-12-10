@@ -14,7 +14,9 @@ extern crate cursive;
 extern crate lazy_static;
 extern crate line_drawing;
 extern crate log;
+extern crate num_traits;
 extern crate parking_lot;
+extern crate pathfinding;
 extern crate structopt;
 
 mod editor;
@@ -48,6 +50,11 @@ struct Options {
     // false: lines bend 90 degrees
     #[structopt(skip = false)]
     line_snap45: bool,
+
+    // true : path uses arrow tip
+    // false: path uses line tip
+    #[structopt(skip = false)]
+    path_arrow: bool,
 
     /// Keep trailing whitespace (on save).
     #[structopt(short, long)]
@@ -111,13 +118,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .leaf(S90, editor_tool::<ArrowTool, _>(|o| o.line_snap45 = false))
                 .leaf(S45, editor_tool::<ArrowTool, _>(|o| o.line_snap45 = true)),
         )
+        .add_subtree(
+            "Path",
+            MenuTree::new()
+                .leaf("Line", editor_tool::<PathTool, _>(|o| o.path_arrow = false))
+                .leaf("Arrow", editor_tool::<PathTool, _>(|o| o.path_arrow = true)),
+        )
         .add_leaf("Text", editor_tool::<TextTool, _>(|_| ()))
         .add_leaf("Erase", editor_tool::<EraseTool, _>(|_| ()))
         .add_delimiter()
         .add_leaf(editor.active_tool(), |_| ());
 
-    // * * c d * f g * i j k * * * * p * * * * * v w x y z
-    // * B C D E F G H I J K * M N O P Q R * T U V W X Y Z
+    // * * c d * f g * i j k * * * * * * * * * * v w x y z
+    // * B C D E F G H I J K * M N O * Q R * T U V W X Y Z
 
     siv.set_autohide_menu(false);
     siv.add_global_callback(Key::Esc, |s| s.select_menubar());
@@ -141,6 +154,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     siv.add_global_callback('L', editor_tool::<LineTool, _>(|o| o.line_snap45 = true));
     siv.add_global_callback('a', editor_tool::<ArrowTool, _>(|o| o.line_snap45 = false));
     siv.add_global_callback('A', editor_tool::<ArrowTool, _>(|o| o.line_snap45 = true));
+    siv.add_global_callback('p', editor_tool::<PathTool, _>(|o| o.path_arrow = false));
+    siv.add_global_callback('P', editor_tool::<PathTool, _>(|o| o.path_arrow = true));
     siv.add_global_callback('t', editor_tool::<TextTool, _>(|_| ()));
     siv.add_global_callback('e', editor_tool::<EraseTool, _>(|_| ()));
 
@@ -291,6 +306,8 @@ fn editor_help(siv: &mut Cursive) {
         "(L) Line: Snap 45",
         "(a) Arrow: Snap 90",
         "(A) Arrow: Snap 45",
+        "(p) Path: Line",
+        "(P) Path: Arrow",
         "(t) Text",
         "(e) Erase",
         "",

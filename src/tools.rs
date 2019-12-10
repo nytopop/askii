@@ -173,9 +173,11 @@ impl Tool for ArrowTool {
 
         if mid != target {
             buf.draw_line(origin, mid);
-            buf.draw_arrow(mid, target);
+            buf.draw_line(mid, target);
+            buf.draw_arrow_tip(mid, target);
         } else {
-            buf.draw_arrow(origin, target);
+            buf.draw_line(origin, target);
+            buf.draw_arrow_tip(origin, target);
         }
     });
 }
@@ -350,6 +352,39 @@ impl Tool for EraseTool {
 
         for pos in cells {
             buf.setv(true, pos, ' ');
+        }
+    });
+}
+
+#[derive(Copy, Clone, Default)]
+pub(crate) struct PathTool {
+    origin: Option<Vec2>,
+    target: Option<Vec2>,
+    arrow: bool,
+}
+
+impl fmt::Display for PathTool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.arrow {
+            write!(f, "Path: Arrow")
+        } else {
+            write!(f, "Path: Line")
+        }
+    }
+}
+
+impl Tool for PathTool {
+    fn load_opts(&mut self, opts: &Options) {
+        self.arrow = opts.path_arrow;
+    }
+
+    fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
+        let (origin, target) = option!(t.origin, t.target);
+
+        let last = buf.draw_path(origin, target);
+
+        if t.arrow {
+            buf.draw_arrow_tip(last, target);
         }
     });
 }
