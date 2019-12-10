@@ -87,7 +87,7 @@ pub(crate) trait Tool: fmt::Display {
     fn on_event(&mut self, ctx: &mut EditorCtx<'_>, e: &Event) -> Option<EventResult>;
 }
 
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Copy, Clone, Default)]
 pub(crate) struct BoxTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
@@ -112,7 +112,7 @@ impl Tool for BoxTool {
     });
 }
 
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Copy, Clone, Default)]
 pub(crate) struct LineTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
@@ -144,7 +144,7 @@ impl Tool for LineTool {
     });
 }
 
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Copy, Clone, Default)]
 pub(crate) struct ArrowTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
@@ -180,7 +180,7 @@ impl Tool for ArrowTool {
     });
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct TextTool {
     origin: Option<Vec2>,
     ready: bool,
@@ -319,7 +319,7 @@ impl TextTool {
     }
 }
 
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Copy, Clone, Default)]
 pub(crate) struct EraseTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
