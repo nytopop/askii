@@ -51,8 +51,8 @@ struct Options {
     #[structopt(skip = false)]
     line_snap45: bool,
 
-    // true : path uses arrow tip
-    // false: path uses line tip
+    // true : paths use arrow tip
+    // false: paths use line tip
     #[structopt(skip = false)]
     path_arrow: bool,
 
