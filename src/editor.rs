@@ -943,9 +943,12 @@ impl Buffer {
 
     /// Returns the coordinates neighboring `pos`, along with the cost to reach each one.
     fn neighbors(&self, pos: (usize, usize)) -> Vec<((usize, usize), OrdFloat)> {
-        let cost = |pos: (usize, usize)| self.visible(pos.into()) as u8 as f64 * 64.0;
-        let card = |pos: (usize, usize)| (pos, OrdFloat(cost(pos) + D));
-        let diag = |pos: (usize, usize)| (pos, OrdFloat(cost(pos) + D2));
+        let costc = |pos: (usize, usize)| self.visible(pos.into()) as u8 as f64 * 64.0;
+        let card = |pos| (pos, OrdFloat(costc(pos) + D));
+
+        let vis = |pos: (usize, usize)| self.visible(pos.into());
+        let costd = |pos, (c1, c2)| (vis(pos) || (vis(c1) && vis(c2))) as u8 as f64 * 64.0;
+        let diag = |pos, cs| (pos, OrdFloat(costd(pos, cs) + D2));
 
         let w = |(x, y)| (x - 1, y);
         let n = |(x, y)| (x, y - 1);
@@ -954,19 +957,19 @@ impl Buffer {
 
         let mut succ = Vec::with_capacity(8);
         if pos.0 > 0 && pos.1 > 0 {
-            succ.push(diag(n(w(pos))));
+            succ.push(diag(n(w(pos)), (n(pos), w(pos))));
         }
         if pos.0 > 0 {
             succ.push(card(w(pos)));
-            succ.push(diag(s(w(pos))));
+            succ.push(diag(s(w(pos)), (s(pos), w(pos))));
         }
         if pos.1 > 0 {
             succ.push(card(n(pos)));
-            succ.push(diag(n(e(pos))));
+            succ.push(diag(n(e(pos)), (n(pos), e(pos))));
         }
         succ.push(card(e(pos)));
         succ.push(card(s(pos)));
-        succ.push(diag(s(e(pos))));
+        succ.push(diag(s(e(pos)), (s(pos), e(pos))));
 
         succ
     }
