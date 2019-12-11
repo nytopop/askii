@@ -505,6 +505,7 @@ const PIPE: char = '|';
 const DIAG: char = '/';
 const GAID: char = '\\';
 const PLUS: char = '+';
+const CURS: char = '_';
 
 const N: char = '^';
 const S: char = 'v';
@@ -650,7 +651,7 @@ impl Buffer {
             )
             .chain(
                 self.cursor
-                    .map(|pos| Cell { pos, c: '_' })
+                    .map(|pos| Cell { pos, c: CURS })
                     .map(Char::Cursor),
             )
     }
@@ -888,7 +889,7 @@ impl Buffer {
 
                 _ => origin,
             }
-        } else if let Some('-') = self.getv(target) {
+        } else if let Some(DASH) = self.getv(target) {
             Vec2::new(target.x, origin.y)
         } else {
             Vec2::new(origin.x, target.y)

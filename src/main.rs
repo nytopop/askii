@@ -3,7 +3,6 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 //! TUI based ASCII diagram editor.
-// TODO: path mode for line and arrow
 // TODO: shapes (diamond, hexagon, parallelogram, trapezoid)
 // TODO: tools (resize, select)
 // TODO: think of a way to do tests (dummy backend + injected events?)
