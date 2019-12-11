@@ -112,32 +112,49 @@ impl Tool for BoxTool {
     });
 }
 
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum PathMode {
+    Snap90,
+    Snap45,
+    Routed,
+}
+
+impl Default for PathMode {
+    fn default() -> Self {
+        Self::Snap90
+    }
+}
+
 #[derive(Copy, Clone, Default)]
 pub(crate) struct LineTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
-    snap45: bool,
+    path_mode: PathMode,
 }
 
 impl fmt::Display for LineTool {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.snap45 {
-            write!(f, "Line: Snap 45")
-        } else {
-            write!(f, "Line: Snap 90")
-        }
+        write!(f, "Line: {:?}", self.path_mode)
     }
 }
 
 impl Tool for LineTool {
     fn load_opts(&mut self, opts: &Options) {
-        self.snap45 = opts.line_snap45;
+        self.path_mode = opts.path_mode;
     }
 
     fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
         let (origin, target) = option!(t.origin, t.target);
 
-        let mid = buf.snap_midpoint(t.snap45, origin, target);
+        if let PathMode::Routed = t.path_mode {
+            buf.draw_path(origin, target);
+            return;
+        }
+
+        let mid = match t.path_mode {
+            PathMode::Snap90 => buf.snap90(origin, target),
+            _ => buf.snap45(origin, target),
+        };
 
         buf.draw_line(origin, mid);
         buf.draw_line(mid, target);
@@ -148,28 +165,33 @@ impl Tool for LineTool {
 pub(crate) struct ArrowTool {
     origin: Option<Vec2>,
     target: Option<Vec2>,
-    snap45: bool,
+    path_mode: PathMode,
 }
 
 impl fmt::Display for ArrowTool {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.snap45 {
-            write!(f, "Arrow: Snap 45")
-        } else {
-            write!(f, "Arrow: Snap 90")
-        }
+        write!(f, "Arrow: {:?}", self.path_mode)
     }
 }
 
 impl Tool for ArrowTool {
     fn load_opts(&mut self, opts: &Options) {
-        self.snap45 = opts.line_snap45;
+        self.path_mode = opts.path_mode;
     }
 
     fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
         let (origin, target) = option!(t.origin, t.target);
 
-        let mid = buf.snap_midpoint(t.snap45, origin, target);
+        if let PathMode::Routed = t.path_mode {
+            let last = buf.draw_path(origin, target);
+            buf.draw_arrow_tip(last, target);
+            return;
+        }
+
+        let mid = match t.path_mode {
+            PathMode::Snap90 => buf.snap90(origin, target),
+            _ => buf.snap45(origin, target),
+        };
 
         if mid != target {
             buf.draw_line(origin, mid);
@@ -352,39 +374,6 @@ impl Tool for EraseTool {
 
         for pos in cells {
             buf.setv(true, pos, ' ');
-        }
-    });
-}
-
-#[derive(Copy, Clone, Default)]
-pub(crate) struct PathTool {
-    origin: Option<Vec2>,
-    target: Option<Vec2>,
-    arrow: bool,
-}
-
-impl fmt::Display for PathTool {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.arrow {
-            write!(f, "Path: Arrow")
-        } else {
-            write!(f, "Path: Line")
-        }
-    }
-}
-
-impl Tool for PathTool {
-    fn load_opts(&mut self, opts: &Options) {
-        self.arrow = opts.path_arrow;
-    }
-
-    fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
-        let (origin, target) = option!(t.origin, t.target);
-
-        let last = buf.draw_path(origin, target);
-
-        if t.arrow {
-            buf.draw_arrow_tip(last, target);
         }
     });
 }

@@ -9,6 +9,7 @@
 // TODO: only store deltas in undo history
 // TODO: use an undo file
 // TODO: show a proper modeline
+#![allow(clippy::many_single_char_names)]
 extern crate cursive;
 extern crate lazy_static;
 extern crate line_drawing;
@@ -23,7 +24,7 @@ mod tools;
 mod ui;
 
 use editor::*;
-use tools::*;
+use tools::{PathMode::*, *};
 use ui::*;
 
 use cursive::{
@@ -45,6 +46,10 @@ use structopt::StructOpt;
     version_message = "Print version information."
 )]
 struct Options {
+    // TODO: consolidate line/arrow and path tools
+    //
+    // change arrow/snap to enum pathmode
+
     // true : lines bend 45 degrees
     // false: lines bend 90 degrees
     #[structopt(skip = false)]
@@ -54,6 +59,10 @@ struct Options {
     // false: paths use line tip
     #[structopt(skip = false)]
     path_arrow: bool,
+
+    /// How paths are routed.
+    #[structopt(skip = PathMode::Snap90)]
+    path_mode: PathMode,
 
     /// Keep trailing whitespace (on save).
     #[structopt(short, long)]
@@ -68,9 +77,20 @@ struct Options {
     file: Option<PathBuf>,
 }
 
+impl Options {
+    fn cycle_path_mode(&mut self) {
+        self.path_mode = match self.path_mode {
+            Snap90 => Snap45,
+            Snap45 => Routed,
+            Routed => Snap90,
+        };
+    }
+}
+
 const EDITOR_ID: &str = "editor";
-const S90: &str = "Snap 90";
-const S45: &str = "Snap 45";
+const S90: &str = "Snap90";
+const S45: &str = "Snap45";
+const RTD: &str = "Routed";
 
 fn main() -> Result<(), Box<dyn Error>> {
     // TODO: consider the case of incompatible terminals
@@ -82,6 +102,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let editor = Editor::open(opts)?;
     let mut siv = Cursive::pancurses()?;
+
+    use PathMode::*;
 
     siv.menubar()
         .add_subtree(
@@ -108,20 +130,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         .add_subtree(
             "Line",
             MenuTree::new()
-                .leaf(S90, editor_tool::<LineTool, _>(|o| o.line_snap45 = false))
-                .leaf(S45, editor_tool::<LineTool, _>(|o| o.line_snap45 = true)),
+                .leaf(S90, editor_tool::<LineTool, _>(|o| o.path_mode = Snap90))
+                .leaf(S45, editor_tool::<LineTool, _>(|o| o.path_mode = Snap45))
+                .leaf(RTD, editor_tool::<LineTool, _>(|o| o.path_mode = Routed)),
         )
         .add_subtree(
             "Arrow",
             MenuTree::new()
-                .leaf(S90, editor_tool::<ArrowTool, _>(|o| o.line_snap45 = false))
-                .leaf(S45, editor_tool::<ArrowTool, _>(|o| o.line_snap45 = true)),
-        )
-        .add_subtree(
-            "Path",
-            MenuTree::new()
-                .leaf("Line", editor_tool::<PathTool, _>(|o| o.path_arrow = false))
-                .leaf("Arrow", editor_tool::<PathTool, _>(|o| o.path_arrow = true)),
+                .leaf(S90, editor_tool::<ArrowTool, _>(|o| o.path_mode = Snap90))
+                .leaf(S45, editor_tool::<ArrowTool, _>(|o| o.path_mode = Snap45))
+                .leaf(RTD, editor_tool::<ArrowTool, _>(|o| o.path_mode = Routed)),
         )
         .add_leaf("Text", editor_tool::<TextTool, _>(|_| ()))
         .add_leaf("Erase", editor_tool::<EraseTool, _>(|_| ()))
@@ -129,7 +147,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .add_leaf(editor.active_tool(), |_| ());
 
     // * * c d * f g * i j k * * * * * * * * * * v w x y z
-    // * B C D E F G H I J K * M N O * Q R * T U V W X Y Z
+    // A B C D E F G H I J K L M N O P Q R * T U V W X Y Z
 
     siv.set_autohide_menu(false);
     siv.add_global_callback(Key::Esc, |s| s.select_menubar());
@@ -149,12 +167,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Tools
     siv.add_global_callback('b', editor_tool::<BoxTool, _>(|_| ()));
-    siv.add_global_callback('l', editor_tool::<LineTool, _>(|o| o.line_snap45 = false));
-    siv.add_global_callback('L', editor_tool::<LineTool, _>(|o| o.line_snap45 = true));
-    siv.add_global_callback('a', editor_tool::<ArrowTool, _>(|o| o.line_snap45 = false));
-    siv.add_global_callback('A', editor_tool::<ArrowTool, _>(|o| o.line_snap45 = true));
-    siv.add_global_callback('p', editor_tool::<PathTool, _>(|o| o.path_arrow = false));
-    siv.add_global_callback('P', editor_tool::<PathTool, _>(|o| o.path_arrow = true));
+    siv.add_global_callback('l', editor_tool::<LineTool, _>(|_| ()));
+    siv.add_global_callback('a', editor_tool::<ArrowTool, _>(|_| ()));
+    siv.add_global_callback('p', modify_opt(Options::cycle_path_mode));
     siv.add_global_callback('t', editor_tool::<TextTool, _>(|_| ()));
     siv.add_global_callback('e', editor_tool::<EraseTool, _>(|_| ()));
 
@@ -270,6 +285,22 @@ where
     }
 }
 
+fn modify_opt<'a, S: 'a>(apply: S) -> impl Fn(&mut Cursive) + 'a
+where
+    S: Fn(&mut Options),
+{
+    move |siv| {
+        let stat = with_editor_mut(siv, |editor| {
+            editor.mut_opts(|o| apply(o));
+            editor.active_tool()
+        });
+
+        let m = siv.menubar();
+        m.remove(m.len() - 1);
+        m.insert_leaf(m.len(), stat, |_| ());
+    }
+}
+
 fn editor_help(siv: &mut Cursive) {
     let version_str = format!("askii {}", env!("CARGO_PKG_VERSION"));
 
@@ -301,12 +332,9 @@ fn editor_help(siv: &mut Cursive) {
         "",
         "# Tools",
         "(b) Box",
-        "(l) Line: Snap 90",
-        "(L) Line: Snap 45",
-        "(a) Arrow: Snap 90",
-        "(A) Arrow: Snap 45",
-        "(p) Path: Line",
-        "(P) Path: Arrow",
+        "(l) Line",
+        "(a) Arrow",
+        "(p) Cycle path mode",
         "(t) Text",
         "(e) Erase",
         "",

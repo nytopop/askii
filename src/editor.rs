@@ -871,25 +871,25 @@ impl Buffer {
         self.setv(true, target, tip);
     }
 
-    /// Returns the midpoint between a pair of 45 or 90 degree lines passing through `origin`
-    /// and `target`.
-    pub(crate) fn snap_midpoint(&self, snap45: bool, origin: Vec2, target: Vec2) -> Vec2 {
-        if snap45 {
-            let delta = min(diff(origin.y, target.y), diff(origin.x, target.x));
+    pub(crate) fn snap45(&self, origin: Vec2, target: Vec2) -> Vec2 {
+        let delta = min(diff(origin.y, target.y), diff(origin.x, target.x));
 
-            match line_slope(origin, target).pair() {
-                // nw
-                (x, y) if x < 0 && y < 0 => target.map(|v| v + delta),
-                // ne
-                (x, y) if x > 0 && y < 0 => target.map_x(|x| x - delta).map_y(|y| y + delta),
-                // sw
-                (x, y) if x < 0 && y > 0 => target.map_x(|x| x + delta).map_y(|y| y - delta),
-                // se
-                (x, y) if x > 0 && y > 0 => target.map(|v| v - delta),
+        match line_slope(origin, target).pair() {
+            // nw
+            (x, y) if x < 0 && y < 0 => target.map(|v| v + delta),
+            // ne
+            (x, y) if x > 0 && y < 0 => target.map_x(|x| x - delta).map_y(|y| y + delta),
+            // sw
+            (x, y) if x < 0 && y > 0 => target.map_x(|x| x + delta).map_y(|y| y - delta),
+            // se
+            (x, y) if x > 0 && y > 0 => target.map(|v| v - delta),
 
-                _ => origin,
-            }
-        } else if let Some(DASH) = self.getv(target) {
+            _ => origin,
+        }
+    }
+
+    pub(crate) fn snap90(&self, origin: Vec2, target: Vec2) -> Vec2 {
+        if let Some(DASH) = self.getv(target) {
             Vec2::new(target.x, origin.y)
         } else {
             Vec2::new(origin.x, target.y)
