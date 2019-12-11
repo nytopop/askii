@@ -46,20 +46,6 @@ use structopt::StructOpt;
     version_message = "Print version information."
 )]
 struct Options {
-    // TODO: consolidate line/arrow and path tools
-    //
-    // change arrow/snap to enum pathmode
-
-    // true : lines bend 45 degrees
-    // false: lines bend 90 degrees
-    #[structopt(skip = false)]
-    line_snap45: bool,
-
-    // true : paths use arrow tip
-    // false: paths use line tip
-    #[structopt(skip = false)]
-    path_arrow: bool,
-
     /// How paths are routed.
     #[structopt(skip = PathMode::Snap90)]
     path_mode: PathMode,
