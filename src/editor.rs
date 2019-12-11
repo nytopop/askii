@@ -18,6 +18,7 @@ use parking_lot::Mutex;
 use pathfinding::directed::astar::astar;
 use std::{
     cmp::{max, min},
+    f64::consts::SQRT_2,
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, ErrorKind, Read, Write},
     iter, mem,
@@ -899,15 +900,11 @@ impl Buffer {
     /// Draw the shortest path from `origin` to `target`. Returns the penultimate point
     /// along that path.
     pub(crate) fn draw_path(&mut self, origin: Vec2, target: Vec2) -> Vec2 {
-        // octile distance
-        let d = 1.0;
-        let d2 = 2.0f64.sqrt();
-
         let mut path = astar(
             &origin.pair(),
-            |&pos| self.neighbors(pos, d, d2),
-            |&pos| compute_distance(pos.into(), target, d, d2),
-            |xy| xy == &target.pair(),
+            |&pos| self.neighbors(pos),
+            |&pos| compute_distance(pos.into(), target),
+            |&pos| pos == target.pair(),
         )
         .map(|(points, _)| points)
         .unwrap()
@@ -934,35 +931,21 @@ impl Buffer {
                 if c != PLUS && next != c {
                     c = PLUS;
                 }
-            }
-
-            if path.peek().is_some() {
                 last = pos;
             }
+
             self.setv(false, pos, c);
         }
-
         self.setv(false, target, PLUS);
+
         last
     }
 
     /// Returns the coordinates neighboring `pos`, along with the cost to reach each one.
-    fn neighbors(&self, pos: (usize, usize), d: f64, d2: f64) -> Vec<((usize, usize), OrdFloat)> {
-        let cost = |pos: (usize, usize)| {
-            OrdFloat(if self.visible(pos.into()) {
-                d * 64.0
-            } else {
-                d
-            })
-        };
-
-        let costd = |pos: (usize, usize)| {
-            OrdFloat(if self.visible(pos.into()) {
-                d2 * 64.0
-            } else {
-                d2
-            })
-        };
+    fn neighbors(&self, pos: (usize, usize)) -> Vec<((usize, usize), OrdFloat)> {
+        let cost = |pos: (usize, usize)| self.visible(pos.into()) as u8 as f64 * 64.0;
+        let card = |pos: (usize, usize)| (pos, OrdFloat(cost(pos) + D));
+        let diag = |pos: (usize, usize)| (pos, OrdFloat(cost(pos) + D2));
 
         let w = |(x, y)| (x - 1, y);
         let n = |(x, y)| (x, y - 1);
@@ -971,30 +954,48 @@ impl Buffer {
 
         let mut succ = Vec::with_capacity(8);
         if pos.0 > 0 && pos.1 > 0 {
-            succ.push((n(w(pos)), costd(n(w(pos)))));
+            succ.push(diag(n(w(pos))));
         }
         if pos.0 > 0 {
-            succ.push((w(pos), cost(w(pos))));
-            succ.push((s(w(pos)), costd(s(w(pos)))));
+            succ.push(card(w(pos)));
+            succ.push(diag(s(w(pos))));
         }
         if pos.1 > 0 {
-            succ.push((n(pos), cost(n(pos))));
-            succ.push((n(e(pos)), costd(n(e(pos)))));
+            succ.push(card(n(pos)));
+            succ.push(diag(n(e(pos))));
         }
-        succ.push((e(pos), cost(e(pos))));
-        succ.push((s(pos), cost(s(pos))));
-        succ.push((s(e(pos)), costd(s(e(pos)))));
+        succ.push(card(e(pos)));
+        succ.push(card(s(pos)));
+        succ.push(diag(s(e(pos))));
 
         succ
     }
 }
 
-/// Returns a distance heuristic between `src` and `dst`.
-fn compute_distance(src: Vec2, dst: Vec2, d: f64, d2: f64) -> OrdFloat {
-    let dx = (src.x as f64 - dst.x as f64).abs();
-    let dy = (src.y as f64 - dst.y as f64).abs();
-    let dist = d * (dx + dy) + (d2 - 2.0 * d) * if dx < dy { dx } else { dy };
-    OrdFloat(dist)
+/// Cost to move one step on the cardinal plane.
+const D: f64 = 1.0;
+
+/// Cost to move one step on the diagonal plane.
+const D2: f64 = SQRT_2;
+
+/// Returns a distance heuristic between `pos` and `dst`.
+fn compute_distance(pos: Vec2, dst: Vec2) -> OrdFloat {
+    // base heuristic:
+    // http://theory.stanford.edu/~amitp/GameProgramming/Heuristics.html#diagonal-distance
+    let dx = (pos.x as f64 - dst.x as f64).abs();
+    let dy = (pos.y as f64 - dst.y as f64).abs();
+
+    let dist = if dx > dy {
+        D * (dx - dy) + D2 * dy
+    } else {
+        D * (dy - dx) + D2 * dx
+    };
+
+    // prefer to expand paths close to dst:
+    // http://theory.stanford.edu/~amitp/GameProgramming/Heuristics.html#breaking-ties
+    const P: f64 = 1.0 + (1.0 / 1000.0);
+
+    OrdFloat(dist * P)
 }
 
 #[derive(PartialEq, PartialOrd, Copy, Clone)]
