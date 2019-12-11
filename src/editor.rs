@@ -336,7 +336,7 @@ impl Editor {
 
     /// Returns the active tool as a human readable string.
     pub(crate) fn active_tool(&self) -> String {
-        format!("active: {}", self.active_tool.as_ref().unwrap())
+        format!("{}", self.active_tool.as_ref().unwrap())
     }
 
     /// Returns the current save path.
