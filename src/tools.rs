@@ -46,9 +46,9 @@ macro_rules! mouse_drag {
     }};
 }
 
-/// Provides an implementation of `Tool::on_event` for tools that contain an `origin`
-/// and `target` field of type `Option<Vec2>`. The implementation performs basic left
-/// mouse drag handling, calling the argument closure when relevant events occur.
+/// Provides an implementation of `Tool::on_event` for tools that contain a `src` and
+/// `dst` field of type `Option<Vec2>`. The implementation performs basic left mouse
+/// drag handling, calling the argument closure when relevant events occur.
 macro_rules! fn_on_event_drag {
     ($render:expr) => {
     fn on_event(&mut self, ctx: &mut EditorCtx<'_>, event: &Event) -> Option<EventResult> {
@@ -56,21 +56,21 @@ macro_rules! fn_on_event_drag {
 
         match event {
             Press(Left) => {
-                self.origin = Some(pos);
-                self.target = Some(pos);
+                self.src = Some(pos);
+                self.dst = Some(pos);
                 ctx.preview(|buf| $render(self, buf));
             }
 
             Hold(Left) => {
-                self.target = Some(pos);
+                self.dst = Some(pos);
                 ctx.preview(|buf| $render(self, buf));
             }
 
             Release(Left) => {
-                self.target = Some(pos);
+                self.dst = Some(pos);
                 ctx.clobber(|buf| $render(self, buf));
-                self.origin = None;
-                self.target = None;
+                self.src = None;
+                self.dst = None;
             }
 
             _ => return None,
@@ -99,17 +99,17 @@ pub(crate) trait Tool: fmt::Display {
 
 #[derive(Copy, Clone, Default)]
 pub(crate) struct BoxTool {
-    origin: Option<Vec2>,
-    target: Option<Vec2>,
+    src: Option<Vec2>,
+    dst: Option<Vec2>,
 }
 
 simple_display! { BoxTool, "Box" }
 
 impl Tool for BoxTool {
     fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
-        let (origin, target) = option!(t.origin, t.target);
+        let (src, dst) = option!(t.src, t.dst);
 
-        let r = Rect::from_corners(origin, target);
+        let r = Rect::from_corners(src, dst);
 
         buf.draw_line(r.top_left(), r.top_right());
         buf.draw_line(r.top_right(), r.bottom_right());
@@ -133,8 +133,8 @@ impl Default for PathMode {
 
 #[derive(Copy, Clone, Default)]
 pub(crate) struct LineTool {
-    origin: Option<Vec2>,
-    target: Option<Vec2>,
+    src: Option<Vec2>,
+    dst: Option<Vec2>,
     path_mode: PathMode,
 }
 
@@ -150,27 +150,27 @@ impl Tool for LineTool {
     }
 
     fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
-        let (origin, target) = option!(t.origin, t.target);
+        let (src, dst) = option!(t.src, t.dst);
 
         if let PathMode::Routed = t.path_mode {
-            buf.draw_path(origin, target);
+            buf.draw_path(src, dst);
             return;
         }
 
         let mid = match t.path_mode {
-            PathMode::Snap90 => buf.snap90(origin, target),
-            _ => buf.snap45(origin, target),
+            PathMode::Snap90 => buf.snap90(src, dst),
+            _ => buf.snap45(src, dst),
         };
 
-        buf.draw_line(origin, mid);
-        buf.draw_line(mid, target);
+        buf.draw_line(src, mid);
+        buf.draw_line(mid, dst);
     });
 }
 
 #[derive(Copy, Clone, Default)]
 pub(crate) struct ArrowTool {
-    origin: Option<Vec2>,
-    target: Option<Vec2>,
+    src: Option<Vec2>,
+    dst: Option<Vec2>,
     path_mode: PathMode,
 }
 
@@ -186,33 +186,33 @@ impl Tool for ArrowTool {
     }
 
     fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
-        let (origin, target) = option!(t.origin, t.target);
+        let (src, dst) = option!(t.src, t.dst);
 
         if let PathMode::Routed = t.path_mode {
-            let last = buf.draw_path(origin, target);
-            buf.draw_arrow_tip(last, target);
+            let last = buf.draw_path(src, dst);
+            buf.draw_arrow_tip(last, dst);
             return;
         }
 
         let mid = match t.path_mode {
-            PathMode::Snap90 => buf.snap90(origin, target),
-            _ => buf.snap45(origin, target),
+            PathMode::Snap90 => buf.snap90(src, dst),
+            _ => buf.snap45(src, dst),
         };
 
-        if mid != target {
-            buf.draw_line(origin, mid);
-            buf.draw_line(mid, target);
-            buf.draw_arrow_tip(mid, target);
+        if mid != dst {
+            buf.draw_line(src, mid);
+            buf.draw_line(mid, dst);
+            buf.draw_arrow_tip(mid, dst);
         } else {
-            buf.draw_line(origin, target);
-            buf.draw_arrow_tip(origin, target);
+            buf.draw_line(src, dst);
+            buf.draw_arrow_tip(src, dst);
         }
     });
 }
 
 #[derive(Clone)]
 pub(crate) struct TextTool {
-    origin: Option<Vec2>,
+    src: Option<Vec2>,
     ready: bool,
     buffer: Vec<Vec<char>>,
     cursor: Vec2,
@@ -221,7 +221,7 @@ pub(crate) struct TextTool {
 impl Default for TextTool {
     fn default() -> Self {
         Self {
-            origin: None,
+            src: None,
             ready: false,
             buffer: vec![],
             cursor: Vec2::new(0, 0),
@@ -241,7 +241,7 @@ impl Tool for TextTool {
                 position,
                 ..
             } => {
-                self.origin = Some(position);
+                self.src = Some(position);
                 self.ready = false;
                 self.buffer.clear();
                 self.buffer.push(vec![]);
@@ -317,7 +317,7 @@ impl Tool for TextTool {
 
             Event::Key(Key::Esc) => {
                 ctx.clobber(|buf| self.render(buf));
-                self.origin = None;
+                self.src = None;
                 self.ready = false;
                 self.buffer.clear();
                 self.cursor = Vec2::new(0, 0);
@@ -332,32 +332,32 @@ impl Tool for TextTool {
 
 impl TextTool {
     fn render(&self, buf: &mut Buffer) {
-        let origin = option!(self.origin);
+        let src = option!(self.src);
 
         for (y, line) in self.buffer.iter().enumerate() {
             for (x, c) in line.iter().enumerate() {
-                let pos = Vec2::new(x, y) + origin;
+                let pos = Vec2::new(x, y) + src;
                 buf.setv(true, pos, *c);
             }
         }
 
-        buf.set_cursor(self.cursor + origin);
+        buf.set_cursor(self.cursor + src);
     }
 }
 
 #[derive(Copy, Clone, Default)]
 pub(crate) struct EraseTool {
-    origin: Option<Vec2>,
-    target: Option<Vec2>,
+    src: Option<Vec2>,
+    dst: Option<Vec2>,
 }
 
 simple_display! { EraseTool, "Erase" }
 
 impl Tool for EraseTool {
     fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
-        let (origin, target) = option!(t.origin, t.target);
+        let (src, dst) = option!(t.src, t.dst);
 
-        let r = Rect::from_corners(origin, target);
+        let r = Rect::from_corners(src, dst);
 
         let cells: Vec<_> = buf
             .iter_within(r.top_left(), r.size())

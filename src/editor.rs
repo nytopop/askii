@@ -797,9 +797,9 @@ impl Buffer {
         self.edits.clear();
     }
 
-    /// Draw a line from `origin` to `target`.
-    pub(crate) fn draw_line(&mut self, origin: Vec2, target: Vec2) {
-        for (i, (s, e)) in Bresenham::new(origin.signed().pair(), target.signed().pair())
+    /// Draw a line from `src` to `dst`.
+    pub(crate) fn draw_line(&mut self, src: Vec2, dst: Vec2) {
+        for (i, (s, e)) in Bresenham::new(src.signed().pair(), dst.signed().pair())
             .steps()
             .enumerate()
         {
@@ -814,20 +814,20 @@ impl Buffer {
             self.set(false, s.0 as usize, s.1 as usize, c);
         }
 
-        self.setv(false, target, PLUS);
+        self.setv(false, dst, PLUS);
     }
 
-    /// Draw an arrow tip for an arrow from `origin` to `target`.
-    pub(crate) fn draw_arrow_tip(&mut self, origin: Vec2, target: Vec2) {
+    /// Draw an arrow tip for an arrow from `src` to `dst`.
+    pub(crate) fn draw_arrow_tip(&mut self, src: Vec2, dst: Vec2) {
         let dec = |v: usize| v - 1;
         let inc = |v: usize| v + 1;
 
-        let north = target.y > 0 && self.visible(target.map_y(dec));
-        let east = self.visible(target.map_x(inc));
-        let south = self.visible(target.map_y(inc));
-        let west = target.x > 0 && self.visible(target.map_x(dec));
+        let north = dst.y > 0 && self.visible(dst.map_y(dec));
+        let east = self.visible(dst.map_x(inc));
+        let south = self.visible(dst.map_y(inc));
+        let west = dst.x > 0 && self.visible(dst.map_x(dec));
 
-        let tip = match line_slope(origin, target).pair() {
+        let tip = match line_slope(src, dst).pair() {
             S_N if north || (west && east) => N,
             S_N if west => W,
             S_N if east => E,
@@ -849,62 +849,62 @@ impl Buffer {
             S_W => W,
 
             // SE
-            (x, y) if x > 0 && y > 0 && self.visible(target.map_x(inc)) => E,
+            (x, y) if x > 0 && y > 0 && self.visible(dst.map_x(inc)) => E,
             (x, y) if x > 0 && y > 0 => S,
 
             // NE
-            (x, y) if x > 0 && y < 0 && self.visible(target.map_x(inc)) => E,
+            (x, y) if x > 0 && y < 0 && self.visible(dst.map_x(inc)) => E,
             (x, y) if x > 0 && y < 0 => N,
 
             // SW
-            (x, y) if x < 0 && y > 0 && target.x == 0 => S,
-            (x, y) if x < 0 && y > 0 && self.visible(target.map_x(dec)) => W,
+            (x, y) if x < 0 && y > 0 && dst.x == 0 => S,
+            (x, y) if x < 0 && y > 0 && self.visible(dst.map_x(dec)) => W,
             (x, y) if x < 0 && y > 0 => S,
 
             // NW
-            (x, y) if x < 0 && y < 0 && target.x == 0 => N,
-            (x, y) if x < 0 && y < 0 && self.visible(target.map_x(dec)) => W,
+            (x, y) if x < 0 && y < 0 && dst.x == 0 => N,
+            (x, y) if x < 0 && y < 0 && self.visible(dst.map_x(dec)) => W,
             (x, y) if x < 0 && y < 0 => N,
 
             (_, _) => PLUS,
         };
 
-        self.setv(true, target, tip);
+        self.setv(true, dst, tip);
     }
 
-    pub(crate) fn snap45(&self, origin: Vec2, target: Vec2) -> Vec2 {
-        let delta = min(diff(origin.y, target.y), diff(origin.x, target.x));
+    pub(crate) fn snap45(&self, src: Vec2, dst: Vec2) -> Vec2 {
+        let delta = min(diff(src.y, dst.y), diff(src.x, dst.x));
 
-        match line_slope(origin, target).pair() {
+        match line_slope(src, dst).pair() {
             // nw
-            (x, y) if x < 0 && y < 0 => target.map(|v| v + delta),
+            (x, y) if x < 0 && y < 0 => dst.map(|v| v + delta),
             // ne
-            (x, y) if x > 0 && y < 0 => target.map_x(|x| x - delta).map_y(|y| y + delta),
+            (x, y) if x > 0 && y < 0 => dst.map_x(|x| x - delta).map_y(|y| y + delta),
             // sw
-            (x, y) if x < 0 && y > 0 => target.map_x(|x| x + delta).map_y(|y| y - delta),
+            (x, y) if x < 0 && y > 0 => dst.map_x(|x| x + delta).map_y(|y| y - delta),
             // se
-            (x, y) if x > 0 && y > 0 => target.map(|v| v - delta),
+            (x, y) if x > 0 && y > 0 => dst.map(|v| v - delta),
 
-            _ => origin,
+            _ => src,
         }
     }
 
-    pub(crate) fn snap90(&self, origin: Vec2, target: Vec2) -> Vec2 {
-        if let Some(DASH) = self.getv(target) {
-            Vec2::new(target.x, origin.y)
+    pub(crate) fn snap90(&self, src: Vec2, dst: Vec2) -> Vec2 {
+        if let Some(DASH) = self.getv(dst) {
+            Vec2::new(dst.x, src.y)
         } else {
-            Vec2::new(origin.x, target.y)
+            Vec2::new(src.x, dst.y)
         }
     }
 
-    /// Draw the shortest path from `origin` to `target`. Returns the penultimate point
+    /// Draw the shortest path from `src` to `dst`. Returns the penultimate point
     /// along that path.
-    pub(crate) fn draw_path(&mut self, origin: Vec2, target: Vec2) -> Vec2 {
+    pub(crate) fn draw_path(&mut self, src: Vec2, dst: Vec2) -> Vec2 {
         let mut path = astar(
-            &origin.pair(),
+            &src.pair(),
             |&pos| self.neighbors(pos),
-            |&pos| heuristic(pos.into(), target),
-            |&pos| pos == target.pair(),
+            |&pos| heuristic(pos.into(), dst),
+            |&pos| pos == dst.pair(),
         )
         .map(|(points, _)| points)
         .unwrap()
@@ -923,7 +923,7 @@ impl Buffer {
             }
         };
 
-        let mut last = origin;
+        let mut last = src;
         while let Some((i, pos)) = path.next() {
             let mut c = decide(i, last, pos);
 
@@ -936,7 +936,7 @@ impl Buffer {
 
             self.setv(false, pos, c);
         }
-        self.setv(false, target, PLUS);
+        self.setv(false, dst, PLUS);
 
         last
     }
@@ -1063,11 +1063,11 @@ fn diff(a: usize, b: usize) -> usize {
     (a as isize - b as isize).abs() as usize
 }
 
-/// Returns the slope between points at `origin` and `target`.
+/// Returns the slope between points at `src` and `dst`.
 ///
 /// The resulting fraction will be reduced to its simplest terms.
-fn line_slope<P: Into<XY<isize>>>(origin: P, target: P) -> XY<isize> {
-    let xy = target.into() - origin;
+fn line_slope<P: Into<XY<isize>>>(src: P, dst: P) -> XY<isize> {
+    let xy = dst.into() - src;
 
     match gcd(xy.x, xy.y) {
         0 => xy,
