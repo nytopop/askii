@@ -81,6 +81,16 @@ macro_rules! fn_on_event_drag {
     }
 }
 
+macro_rules! simple_display {
+    ($type:ty, $fstr:expr) => {
+        impl fmt::Display for $type {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, $fstr)
+            }
+        }
+    };
+}
+
 pub(crate) trait Tool: fmt::Display {
     fn load_opts(&mut self, _: &Options) {}
 
@@ -93,11 +103,7 @@ pub(crate) struct BoxTool {
     target: Option<Vec2>,
 }
 
-impl fmt::Display for BoxTool {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Box")
-    }
-}
+simple_display! { BoxTool, "Box" }
 
 impl Tool for BoxTool {
     fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
@@ -223,11 +229,7 @@ impl Default for TextTool {
     }
 }
 
-impl fmt::Display for TextTool {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Text")
-    }
-}
+simple_display! { TextTool, "Text" }
 
 impl Tool for TextTool {
     fn on_event(&mut self, ctx: &mut EditorCtx<'_>, event: &Event) -> Option<EventResult> {
@@ -349,11 +351,7 @@ pub(crate) struct EraseTool {
     target: Option<Vec2>,
 }
 
-impl fmt::Display for EraseTool {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Erase")
-    }
-}
+simple_display! { EraseTool, "Erase" }
 
 impl Tool for EraseTool {
     fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
