@@ -108,7 +108,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             MenuTree::new()
                 .leaf("(u) Undo", editor_undo)
                 .leaf("(r) Redo", editor_redo)
-                .leaf("(m) Trim Margins", editor_trim_margins),
+                .leaf("(T) Trim Margins", editor_trim_margins),
         )
         .add_leaf("Help", editor_help)
         .add_delimiter()
@@ -132,8 +132,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .add_delimiter()
         .add_leaf(editor.active_tool(), |_| ());
 
-    // * * c d * f g * i j k * * * * * * * * * * v w x y z
-    // A B C D E F G H I J K L M N O P Q R * T U V W X Y Z
+    // * * c d * f g * i j k * m * * * * * * * * v w x y z
+    // A B C D E F G H I J K L M N O P Q R * * U V W X Y Z
 
     siv.set_autohide_menu(false);
     siv.add_global_callback(Key::Esc, |s| s.select_menubar());
@@ -149,7 +149,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Edit
     siv.add_global_callback('u', editor_undo);
     siv.add_global_callback('r', editor_redo);
-    siv.add_global_callback('m', editor_trim_margins);
+    siv.add_global_callback('T', editor_trim_margins);
 
     // Tools
     siv.add_global_callback('b', editor_tool::<BoxTool, _>(|_| ()));
@@ -314,7 +314,7 @@ fn editor_help(siv: &mut Cursive) {
         "# Edit",
         "(u) Undo",
         "(r) Redo",
-        "(m) Trim Margins",
+        "(T) Trim Margins",
         "",
         "# Tools",
         "(b) Box",
