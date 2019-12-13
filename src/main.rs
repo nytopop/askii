@@ -4,11 +4,16 @@
 // copied, modified, or distributed except according to those terms.
 //! TUI based ASCII diagram editor.
 // TODO: shapes (diamond, hexagon, parallelogram, trapezoid)
-// TODO: tools (resize, select)
+// TODO: resize tool
 // TODO: think of a way to do tests (dummy backend + injected events?)
 // TODO: only store deltas in undo history
 // TODO: use an undo file
-// TODO: show a proper modeline
+// TODO: show a proper modeline (Rc<RwLock<_>>?)
+//       * [ ] *scratch* (Line: Routed)
+//       * [+] *scratch* (Line: Routed)
+//       * [ ] "path/to/file" (Line: Routed)
+//       * [+] "path/to/file" (Line: Routed)
+// TODO: inline mode (automated comment banner insertion)
 #![allow(clippy::many_single_char_names)]
 extern crate cursive;
 extern crate lazy_static;
@@ -129,10 +134,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
         .add_leaf("Text", editor_tool::<TextTool, _>(|_| ()))
         .add_leaf("Erase", editor_tool::<EraseTool, _>(|_| ()))
+        .add_leaf("Move", editor_tool::<MoveTool, _>(|_| ()))
         .add_delimiter()
         .add_leaf(editor.active_tool(), |_| ());
 
-    // * * c d * f g * i j k * m * * * * * * * * v w x y z
+    // * * c d * f g * i j k * * * * * * * * * * v w x y z
     // A B C D E F G H I J K L M N O P Q R * * U V W X Y Z
 
     siv.set_autohide_menu(false);
@@ -158,6 +164,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     siv.add_global_callback('p', modify_opt(Options::cycle_path_mode));
     siv.add_global_callback('t', editor_tool::<TextTool, _>(|_| ()));
     siv.add_global_callback('e', editor_tool::<EraseTool, _>(|_| ()));
+    siv.add_global_callback('m', editor_tool::<MoveTool, _>(|_| ()));
 
     // Help
     siv.add_global_callback('h', editor_help);

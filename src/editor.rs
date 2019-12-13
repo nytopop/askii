@@ -536,8 +536,17 @@ impl Cell {
         self.pos
     }
 
+    pub(crate) fn c(&self) -> char {
+        self.c
+    }
+
     pub(crate) fn is_whitespace(&self) -> bool {
         self.c.is_whitespace()
+    }
+
+    pub(crate) fn translate(mut self, by: XY<isize>) -> Self {
+        self.pos = self.pos.saturating_add(by);
+        self
     }
 }
 
