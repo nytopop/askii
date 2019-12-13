@@ -14,6 +14,7 @@
 //       * [ ] "path/to/file" (Line: Routed)
 //       * [+] "path/to/file" (Line: Routed)
 // TODO: inline mode (automated comment banner insertion)
+// TODO: atomic file writes?
 #![allow(clippy::many_single_char_names)]
 extern crate cursive;
 extern crate lazy_static;
@@ -161,7 +162,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     siv.add_global_callback('b', editor_tool::<BoxTool, _>(|_| ()));
     siv.add_global_callback('l', editor_tool::<LineTool, _>(|_| ()));
     siv.add_global_callback('a', editor_tool::<ArrowTool, _>(|_| ()));
-    siv.add_global_callback('p', modify_opt(Options::cycle_path_mode));
+    siv.add_global_callback('p', modify_opts(Options::cycle_path_mode));
     siv.add_global_callback('t', editor_tool::<TextTool, _>(|_| ()));
     siv.add_global_callback('e', editor_tool::<EraseTool, _>(|_| ()));
     siv.add_global_callback('m', editor_tool::<MoveTool, _>(|_| ()));
@@ -278,7 +279,7 @@ where
     }
 }
 
-fn modify_opt<'a, S: 'a>(apply: S) -> impl Fn(&mut Cursive) + 'a
+fn modify_opts<'a, S: 'a>(apply: S) -> impl Fn(&mut Cursive) + 'a
 where
     S: Fn(&mut Options),
 {
@@ -294,6 +295,33 @@ where
     }
 }
 
+// TODO: H   Show tool specific help.
+const HELP: &str = "KEYBINDS:
+    Esc Focus the menu bar.
+    n   New: Open a new (blank) file.
+    o   Open: Open the specified file.
+    s   Save: Save buffer to the current path. If there isn't one, this is equivalent to Save As.
+    S   Save As: Save buffer to the specified path.
+    `   Debug: Open the debug console.
+    q   Quit: Quit without saving.
+    u   Undo: Undo the last buffer modification.
+    r   Redo: Redo the last undo.
+    T   Trim Margins: Trim excess whitespace from all margins.
+    b   Switch to the Box tool.
+    l   Switch to the Line tool.
+    a   Switch to the Arrow tool.
+    p   Cycle the type of path that Line and Arrow tools will draw.
+    t   Switch to the Text tool.
+    e   Switch to the Erase tool.
+    h   Help: Display this help message.
+
+NAVIGATION:
+    Scroll with the arrow keys or page-up and page-down.
+
+    Pan around by dragging with the right mouse button.
+
+    Menus are keyboard aware, too!";
+
 fn editor_help(siv: &mut Cursive) {
     let version_str = format!("askii {}", env!("CARGO_PKG_VERSION"));
 
@@ -305,43 +333,7 @@ fn editor_help(siv: &mut Cursive) {
 
     let author_str = format!("Made with love by:\n{}", authors);
 
-    let help_str = vec![
-        &*version_str,
-        "",
-        &*author_str,
-        "",
-        "# Keybinds",
-        "## File",
-        "(n) New",
-        "(o) Open",
-        "(s) Save",
-        "(S) Save As",
-        "(`) Debug Console",
-        "(q) Quit",
-        "",
-        "## Edit",
-        "(u) Undo",
-        "(r) Redo",
-        "(T) Trim Margins",
-        "",
-        "## Tools",
-        "(b) Box",
-        "(l) Line",
-        "(a) Arrow",
-        "(p) Cycle path mode",
-        "(t) Text",
-        "(e) Erase",
-        "",
-        "(h) Help",
-        "",
-        "# Movement",
-        "* Scroll with the arrow keys or page-up and page-down.",
-        "* Pan around by holding down the right mouse button.",
-        "* Menus are keyboard aware, too!",
-    ]
-    .join("\n");
-
-    // TODO: (H): tool specific help
+    let help_str = format!("{}\n\n{}\n\n{}", version_str, author_str, HELP);
 
     notify_unique(siv, "editor_help", "Help", help_str);
 }
