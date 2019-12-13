@@ -3,7 +3,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 use super::{
-    editor::{Buffer, Char, EditorCtx, CONSUMED},
+    editor::{Buffer, Char, EditorCtx, CONSUMED, SP},
     Options,
 };
 use cursive::{
@@ -371,7 +371,7 @@ impl Tool for EraseTool {
             .collect();
 
         for pos in cells {
-            buf.setv(true, pos, ' ');
+            buf.setv(true, pos, SP);
         }
     });
 }
@@ -457,7 +457,7 @@ impl MoveTool {
 
         if let (Some(grab_src), Some(grab_dst)) = (self.grab_src, self.grab_dst) {
             for cell in state.iter() {
-                buf.setv(true, cell.pos(), ' ');
+                buf.setv(true, cell.pos(), SP);
             }
 
             let delta = grab_dst.signed() - grab_src.signed();

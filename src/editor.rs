@@ -500,13 +500,13 @@ impl Editor {
     }
 }
 
-const SP: char = ' ';
-const DASH: char = '-';
-const PIPE: char = '|';
-const DIAG: char = '/';
-const GAID: char = '\\';
-const PLUS: char = '+';
-const CURS: char = '_';
+pub(crate) const SP: char = ' ';
+pub(crate) const DASH: char = '-';
+pub(crate) const PIPE: char = '|';
+pub(crate) const DIAG: char = '/';
+pub(crate) const GAID: char = '\\';
+pub(crate) const PLUS: char = '+';
+pub(crate) const CURS: char = '_';
 
 const N: char = '^';
 const S: char = 'v';
