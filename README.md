@@ -1,12 +1,16 @@
 <p align="center">
+  <!-- project logo --!>
   <img src="askii.png" alt="logo"><br><br>
+  <!-- crates.io version !-->
   <a href="https://crates.io/crates/askii">
     <img alt="Crates.io" src="https://img.shields.io/crates/v/askii?style=flat-square">
   </a>
-  <!-- build status --!>
-  <a href="./LICENSE-MIT">
-    <img alt="Crates.io" src="https://img.shields.io/crates/l/askii?style=flat-square">
-  </a>
+  <!-- crates.io downloads --!>
+  <img alt="Crates.io" src="https://img.shields.io/crates/d/askii?style=flat-square">
+  <!-- github release downloads --!>
+  <!-- <img alt="GitHub All Releases" src="https://img.shields.io/github/downloads/nytopop/askii/total?style=flat-square"> --!>
+  <!-- crates.io license --!>
+  <img alt="Apache-2.0 OR MIT" src="https://img.shields.io/crates/l/askii?style=flat-square">
 </p>
 
 TUI based ASCII diagram editor.

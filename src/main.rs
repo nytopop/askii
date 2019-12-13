@@ -15,6 +15,7 @@
 //       * [+] "path/to/file" (Line: Routed)
 // TODO: inline mode (automated comment banner insertion)
 // TODO: atomic file writes?
+// TODO: write a man page
 #![allow(clippy::many_single_char_names)]
 extern crate cursive;
 extern crate lazy_static;
