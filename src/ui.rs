@@ -6,7 +6,7 @@ use super::{editor::Editor, EDITOR_ID};
 use cursive::{
     align::HAlign,
     view::Identifiable,
-    views::{Dialog, EditView, ScrollView},
+    views::{Dialog, EditView, ScrollView, TextView},
     Cursive,
 };
 use std::rc::Rc;
@@ -118,9 +118,14 @@ where
     T: Into<String>,
     C: Into<String>,
 {
+    let content = ScrollView::new(TextView::new(content))
+        .scroll_x(false)
+        .scroll_y(true);
+
     siv.add_layer(
-        Dialog::info(content)
+        Dialog::around(content)
             .title(title)
+            .dismiss_button("Ok")
             .h_align(HAlign::Center)
             .padding(((0, 0), (0, 0))),
     );
@@ -137,9 +142,14 @@ where
         return;
     }
 
+    let content = ScrollView::new(TextView::new(content))
+        .scroll_x(false)
+        .scroll_y(true);
+
     siv.add_layer(
-        Dialog::info(content)
+        Dialog::around(content)
             .title(title)
+            .dismiss_button("Ok")
             .h_align(HAlign::Center)
             .padding(((0, 0), (0, 0)))
             .with_id(unique_id),
