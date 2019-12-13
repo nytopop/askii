@@ -14,7 +14,7 @@ use cursive::{
 use lazy_static::lazy_static;
 use line_drawing::Bresenham;
 use num_traits::Zero;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use pathfinding::directed::astar::astar;
 use std::{
     cmp::{max, min},
@@ -23,6 +23,7 @@ use std::{
     io::{self, BufRead, BufReader, ErrorKind, Read, Write},
     iter, mem,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 pub(crate) const CONSUMED: Option<EventResult> = Some(EventResult::Consumed(None));
@@ -110,11 +111,12 @@ macro_rules! intercept_pan {
                     let p = $ctx.0.content_viewport();
                     let i = $ctx.0.inner_size();
 
+                    let mut editor = $ctx.0.get_inner_mut().write();
                     if pos.x < old.x && within((old.x - pos.x + 1) * 4, p.right(), i.x) {
-                        $ctx.0.get_inner_mut().canvas.x += old.x - pos.x;
+                        editor.canvas.x += old.x - pos.x;
                     }
                     if pos.y < old.y && within((old.y - pos.y + 1) * 2, p.bottom(), i.y) {
-                        $ctx.0.get_inner_mut().canvas.y += old.y - pos.y;
+                        editor.canvas.y += old.y - pos.y;
                     }
 
                     return CONSUMED;
@@ -139,11 +141,11 @@ fn drag(x: usize, new: usize, old: usize) -> usize {
     }
 }
 
-pub(crate) struct EditorCtx<'a>(&'a mut ScrollView<Editor>);
+pub(crate) struct EditorCtx<'a>(&'a mut ScrollView<EditorView>);
 
 impl<'a> EditorCtx<'a> {
     /// Returns a new `EditorCtx`.
-    pub(super) fn new(view: &'a mut ScrollView<Editor>) -> Self {
+    pub(super) fn new(view: &'a mut ScrollView<EditorView>) -> Self {
         Self(view)
     }
 
@@ -152,9 +154,9 @@ impl<'a> EditorCtx<'a> {
         intercept_scrollbar!(self, event);
         intercept_pan!(self, event);
 
-        let mut tool = self.0.get_inner_mut().active_tool.take().unwrap();
+        let mut tool = self.0.get_inner_mut().write().active_tool.take().unwrap();
         let res = tool.on_event(self, event);
-        self.0.get_inner_mut().active_tool = Some(tool);
+        self.0.get_inner_mut().write().active_tool = Some(tool);
 
         res
     }
@@ -202,7 +204,7 @@ impl<'a> EditorCtx<'a> {
         // BUG: scrolling lags behind changes to the canvas bounds by 1 render tick. in
         // order to truly fix the issue, we need to implement scrolling as a function of
         // the editor itself.
-        let editor = self.0.get_inner_mut();
+        let mut editor = self.0.get_inner_mut().write();
 
         if pos.x + 1 >= editor.canvas.x {
             editor.canvas.x += max(step_x, (pos.x + 1) - editor.canvas.x);
@@ -214,7 +216,9 @@ impl<'a> EditorCtx<'a> {
 
     /// Scroll to the edit buffer's current cursor, if one exists.
     pub(crate) fn scroll_to_cursor(&mut self) {
-        if let Some(pos) = self.0.get_inner_mut().buffer.cursor {
+        let pos = self.0.get_inner_mut().read().buffer.cursor;
+
+        if let Some(pos) = pos {
             self.scroll_to(pos, 1, 1);
         }
     }
@@ -222,7 +226,7 @@ impl<'a> EditorCtx<'a> {
     /// Modify the edit buffer using `render`, flushing any changes and saving a snapshot
     /// of the buffer's prior state in the editor's undo history.
     pub(crate) fn clobber<R: FnOnce(&mut Buffer)>(&mut self, render: R) {
-        let editor = self.0.get_inner_mut();
+        let mut editor = self.0.get_inner_mut().write();
 
         editor.with_snapshot(|ed| {
             render(&mut ed.buffer);
@@ -233,9 +237,61 @@ impl<'a> EditorCtx<'a> {
 
     /// Modify the edit buffer using `render`, without flushing any of changes.
     pub(crate) fn preview<R: FnOnce(&mut Buffer)>(&mut self, render: R) {
-        let editor = self.0.get_inner_mut();
+        let mut editor = self.0.get_inner_mut().write();
         editor.buffer.discard_edits();
         render(&mut editor.buffer);
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct EditorView {
+    inner: Rc<RwLock<Editor>>,
+}
+
+impl View for EditorView {
+    fn draw(&self, p: &Printer<'_, '_>) {
+        let mut normal = print_styled(ColorStyle::primary());
+        let mut change = print_styled(ColorStyle::highlight_inactive());
+        let mut cursor = print_styled(ColorStyle::highlight());
+
+        for c in self.read().buffer.iter_within(p.content_offset, p.size) {
+            match c {
+                Char::Clean(Cell { pos, c }) => normal(p, pos, c),
+                Char::Dirty(Cell { pos, c }) => change(p, pos, c),
+                Char::Cursor(Cell { pos, c }) => cursor(p, pos, c),
+            }
+        }
+    }
+
+    fn required_size(&mut self, size: Vec2) -> Vec2 {
+        let mut editor = self.write();
+
+        let buf_bounds = editor.buffer.bounds();
+
+        let bounds = Vec2 {
+            x: max(size.x, max(buf_bounds.x, editor.canvas.x)),
+            y: max(size.y, max(buf_bounds.y, editor.canvas.y)),
+        };
+
+        editor.canvas = bounds;
+
+        bounds
+    }
+}
+
+impl EditorView {
+    pub(crate) fn new(inner: Editor) -> Self {
+        Self {
+            inner: Rc::new(RwLock::new(inner)),
+        }
+    }
+
+    pub(crate) fn read(&self) -> RwLockReadGuard<Editor> {
+        self.inner.read()
+    }
+
+    pub(crate) fn write(&self) -> RwLockWriteGuard<Editor> {
+        self.inner.write()
     }
 }
 
@@ -337,11 +393,11 @@ impl Editor {
 
     /// Returns the active tool as a human readable string.
     pub(crate) fn active_tool(&self) -> String {
-        format!("{}", self.active_tool.as_ref().unwrap())
+        format!("({})", self.active_tool.as_ref().unwrap())
     }
 
     /// Returns the current save path.
-    fn path(&self) -> &Option<PathBuf> {
+    pub(crate) fn path(&self) -> &Option<PathBuf> {
         &self.opts.file
     }
 

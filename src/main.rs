@@ -8,11 +8,6 @@
 // TODO: think of a way to do tests (dummy backend + injected events?)
 // TODO: only store deltas in undo history
 // TODO: use an undo file
-// TODO: show a proper modeline (Rc<RwLock<_>>?)
-//       * [ ] *scratch* (Line: Routed)
-//       * [+] *scratch* (Line: Routed)
-//       * [ ] "path/to/file" (Line: Routed)
-//       * [+] "path/to/file" (Line: Routed)
 // TODO: inline mode (automated comment banner insertion)
 // TODO: atomic file writes?
 // TODO: write a man page
@@ -27,10 +22,12 @@ extern crate pathfinding;
 extern crate structopt;
 
 mod editor;
+mod modeline;
 mod tools;
 mod ui;
 
 use editor::*;
+use modeline::*;
 use tools::{PathMode::*, *};
 use ui::*;
 
@@ -39,7 +36,7 @@ use cursive::{
     logger,
     menu::MenuTree,
     view::{scroll::Scroller, Identifiable, View},
-    views::{Dialog, OnEventView, ScrollView},
+    views::{Dialog, LinearLayout, OnEventView, ScrollView},
     Cursive,
 };
 use log::debug;
@@ -93,7 +90,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let opts = Options::from_args();
     debug!("{:?}", opts);
 
-    let editor = Editor::open(opts)?;
+    let editor = EditorView::new(Editor::open(opts)?);
     let mut siv = Cursive::pancurses()?;
 
     use PathMode::*;
@@ -136,9 +133,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
         .add_leaf("Text", editor_tool::<TextTool, _>(|_| ()))
         .add_leaf("Erase", editor_tool::<EraseTool, _>(|_| ()))
-        .add_leaf("Move", editor_tool::<MoveTool, _>(|_| ()))
-        .add_delimiter()
-        .add_leaf(editor.active_tool(), |_| ());
+        .add_leaf("Move", editor_tool::<MoveTool, _>(|_| ()));
 
     // * * c d * f g * i j k * * * * * * * * * * v w x y z
     // A B C D E F G H I J K L M N O P Q R * * U V W X Y Z
@@ -171,16 +166,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Help
     siv.add_global_callback('h', editor_help);
 
-    siv.add_fullscreen_layer(
-        OnEventView::new(new_scrollview(editor).with_id(EDITOR_ID)).on_pre_event_inner(
-            EventTrigger::any(),
-            |view, event| {
-                let mut scroll = view.get_mut();
-                let mut ctx = EditorCtx::new(&mut scroll);
-                ctx.on_event(event)
-            },
-        ),
+    let line = ModeLine::new(editor.clone());
+
+    let editor = OnEventView::new(new_scrollview(editor).with_id(EDITOR_ID)).on_pre_event_inner(
+        EventTrigger::any(),
+        |view, event| {
+            let mut scroll = view.get_mut();
+            let mut ctx = EditorCtx::new(&mut scroll);
+            ctx.on_event(event)
+        },
     );
+
+    let layout = LinearLayout::vertical().child(editor).child(line);
+
+    siv.add_fullscreen_layer(layout);
 
     siv.run();
 
@@ -268,15 +267,10 @@ where
     S: Fn(&mut Options),
 {
     move |siv| {
-        let stat = with_editor_mut(siv, |editor| {
+        with_editor_mut(siv, |editor| {
             editor.mut_opts(|o| apply(o));
             editor.set_tool(T::default());
-            editor.active_tool()
         });
-
-        let m = siv.menubar();
-        m.remove(m.len() - 1);
-        m.insert_leaf(m.len(), stat, |_| ());
     }
 }
 
@@ -284,16 +278,7 @@ fn modify_opts<'a, S: 'a>(apply: S) -> impl Fn(&mut Cursive) + 'a
 where
     S: Fn(&mut Options),
 {
-    move |siv| {
-        let stat = with_editor_mut(siv, |editor| {
-            editor.mut_opts(|o| apply(o));
-            editor.active_tool()
-        });
-
-        let m = siv.menubar();
-        m.remove(m.len() - 1);
-        m.insert_leaf(m.len(), stat, |_| ());
-    }
+    move |siv| with_editor_mut(siv, |editor| editor.mut_opts(|o| apply(o)))
 }
 
 // TODO: H   Show tool specific help.

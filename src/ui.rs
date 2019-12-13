@@ -2,7 +2,10 @@
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
-use super::{editor::Editor, EDITOR_ID};
+use super::{
+    editor::{Editor, EditorView},
+    EDITOR_ID,
+};
 use cursive::{
     align::HAlign,
     view::Identifiable,
@@ -31,8 +34,8 @@ pub(super) fn with_editor_mut<T, F>(siv: &mut Cursive, f: F) -> T
 where
     F: FnOnce(&mut Editor) -> T,
 {
-    siv.find_id::<ScrollView<Editor>>(EDITOR_ID)
-        .map(|mut view| f(view.get_inner_mut()))
+    siv.find_id::<ScrollView<EditorView>>(EDITOR_ID)
+        .map(|mut view| f(&mut view.get_inner_mut().write()))
         .unwrap()
 }
 
@@ -42,8 +45,8 @@ pub(super) fn with_editor<T, F>(siv: &mut Cursive, f: F) -> T
 where
     F: FnOnce(&Editor) -> T,
 {
-    siv.find_id::<ScrollView<Editor>>(EDITOR_ID)
-        .map(|view| f(view.get_inner()))
+    siv.find_id::<ScrollView<EditorView>>(EDITOR_ID)
+        .map(|view| f(&view.get_inner().read()))
         .unwrap()
 }
 
