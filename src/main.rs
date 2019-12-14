@@ -201,6 +201,11 @@ fn editor_open(siv: &mut Cursive) {
         display_form(siv, "Open", |siv, id, raw_path| {
             let mut view = siv.find_id::<Dialog>(id).unwrap();
 
+            if raw_path.is_empty() {
+                view.set_title("Open: path is empty!");
+                return;
+            }
+
             let path: PathBuf = raw_path.into();
             if !path.exists() {
                 view.set_title(format!("Open: {:?} does not exist!", path));
@@ -230,6 +235,11 @@ fn editor_save(siv: &mut Cursive) {
 fn editor_save_as(siv: &mut Cursive) {
     display_form(siv, "Save As", |siv, id, raw_path| {
         let mut view = siv.find_id::<Dialog>(id).unwrap();
+
+        if raw_path.is_empty() {
+            view.set_title("Save As: path is empty!");
+            return;
+        }
 
         let path: PathBuf = raw_path.into();
         if path.is_dir() {
