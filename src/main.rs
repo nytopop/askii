@@ -316,7 +316,20 @@ NAVIGATION:
 
     Pan around by dragging with the right mouse button.
 
-    Menus are keyboard aware, too!";
+    Menus are keyboard aware, too!
+
+TOOLS:
+    Box   Draw boxes. Click and drag to the desired dimensions.
+
+    Line  Draw lines. Click and drag to the target position.
+
+    Arrow Draw arrows. Click and drag to the target position.
+
+    Text  Write text. Click somewhere and type. Esc will save the content, while clicking anywhere on the canvas discards it.
+
+    Erase Erase things. Click and drag to form a box, everything inside of which will be erased.
+
+    Move  Move existing content. Click and drag to select an area, then click and drag from inside the area to move its content. Clicking outside of the selected area resets the selection.";
 
 fn editor_help(siv: &mut Cursive) {
     let version_str = format!("askii {}", env!("CARGO_PKG_VERSION"));
