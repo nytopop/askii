@@ -307,35 +307,6 @@ pub(crate) struct Editor {
     rendered: String,
 }
 
-impl View for Editor {
-    fn draw(&self, p: &Printer<'_, '_>) {
-        let mut normal = print_styled(ColorStyle::primary());
-        let mut change = print_styled(ColorStyle::highlight_inactive());
-        let mut cursor = print_styled(ColorStyle::highlight());
-
-        for c in self.buffer.iter_within(p.content_offset, p.size) {
-            match c {
-                Char::Clean(Cell { pos, c }) => normal(p, pos, c),
-                Char::Dirty(Cell { pos, c }) => change(p, pos, c),
-                Char::Cursor(Cell { pos, c }) => cursor(p, pos, c),
-            }
-        }
-    }
-
-    fn required_size(&mut self, size: Vec2) -> Vec2 {
-        let buf_bounds = self.buffer.bounds();
-
-        let bounds = Vec2 {
-            x: max(size.x, max(buf_bounds.x, self.canvas.x)),
-            y: max(size.y, max(buf_bounds.y, self.canvas.y)),
-        };
-
-        self.canvas = bounds;
-
-        bounds
-    }
-}
-
 fn print_styled(style: ColorStyle) -> impl FnMut(&Printer<'_, '_>, Vec2, char) {
     let mut buf = vec![0; 4];
     move |p, pos, c| {
