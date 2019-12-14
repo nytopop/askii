@@ -3,7 +3,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 use super::{
-    editor::{Buffer, Char, EditorCtx, CONSUMED, SP},
+    editor::{Buffer, Cell, Char, EditorCtx, CONSUMED, SP},
     Options,
 };
 use cursive::{
@@ -355,25 +355,24 @@ simple_display! { EraseTool, "Erase" }
 
 impl Tool for EraseTool {
     fn_on_event_drag!(|t: &Self, buf: &mut Buffer| {
-        let (src, dst) = option!(t.src, t.dst);
+        let state: Vec<_> = visible_cells(buf, option!(t.src, t.dst)).collect();
 
-        let r = Rect::from_corners(src, dst);
-
-        let cells: Vec<_> = buf
-            .iter_within(r.top_left(), r.size())
-            .flat_map(|c| match c {
-                Char::Clean(cell) => Some(cell),
-                Char::Dirty(cell) => Some(cell),
-                _ => None,
-            })
-            .filter(|cell| !cell.is_whitespace())
-            .map(|cell| cell.pos())
-            .collect();
-
-        for pos in cells {
-            buf.setv(true, pos, SP);
+        for cell in state {
+            buf.setv(true, cell.pos(), SP);
         }
     });
+}
+
+fn visible_cells<'a>(buf: &'a Buffer, cs: (Vec2, Vec2)) -> impl Iterator<Item = Cell> + 'a {
+    let area = Rect::from_corners(cs.0, cs.1);
+
+    buf.iter_within(area.top_left(), area.size())
+        .flat_map(|c| match c {
+            Char::Clean(cell) => Some(cell),
+            Char::Dirty(cell) => Some(cell),
+            _ => None,
+        })
+        .filter(|cell| !cell.is_whitespace())
 }
 
 #[derive(Copy, Clone, Default)]
@@ -443,17 +442,7 @@ impl MoveTool {
     fn render(&self, buf: &mut Buffer) {
         let (src, dst) = option!(self.src, self.dst);
 
-        let r = Rect::from_corners(src, dst);
-
-        let state: Vec<_> = buf
-            .iter_within(r.top_left(), r.size())
-            .flat_map(|c| match c {
-                Char::Clean(cell) => Some(cell),
-                Char::Dirty(cell) => Some(cell),
-                _ => None,
-            })
-            .filter(|cell| !cell.is_whitespace())
-            .collect();
+        let state: Vec<_> = visible_cells(buf, (src, dst)).collect();
 
         if let (Some(grab_src), Some(grab_dst)) = (self.grab_src, self.grab_dst) {
             for cell in state.iter() {
