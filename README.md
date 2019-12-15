@@ -27,7 +27,7 @@ Install a [binary release](https://github.com/nytopop/askii/releases), or use `c
 To use askii on Windows or Mac, you'll need to compile it from source. Cross compilation of Rust programs that import C libraries (ncurses) is difficult at best, so binary releases are not provided here.
 
 # Compilation
-Use `cargo`. The binary links against `libncursesw.so.6`, so make sure it is available during compilation.
+Use `cargo`. The binary links against `libncursesw` and `libxcb` (on linux), so make sure they are available during compilation.
 
 Alternatively, the [`Makefile`](Makefile) can be used to build a binary and deb / rpm / pacman packages.
 
