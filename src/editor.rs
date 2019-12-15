@@ -370,8 +370,8 @@ impl Editor {
     }
 
     /// Returns the current save path.
-    pub(crate) fn path(&self) -> &Option<PathBuf> {
-        &self.opts.file
+    pub(crate) fn path(&self) -> Option<&PathBuf> {
+        self.opts.file.as_ref()
     }
 
     /// Clear all buffer state and begin a blank diagram.

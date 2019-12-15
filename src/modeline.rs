@@ -15,10 +15,10 @@ impl View for ModeLine {
 
         let editor = self.editor.read();
 
-        let path = match editor.path() {
-            Some(p) => format!("{:?}", p.to_str().unwrap()),
-            None => format!("*scratch buffer*"),
-        };
+        let path = editor
+            .path()
+            .map(|p| p.to_str().unwrap())
+            .unwrap_or("*scratch buffer*");
 
         if editor.is_dirty() {
             p.with_color(ColorStyle::title_primary(), |p| p.print(at(1), &path));
