@@ -20,7 +20,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "askii"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "clipboard 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "cursive 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
