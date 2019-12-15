@@ -3,15 +3,25 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 //! TUI based ASCII diagram editor.
-// TODO: shapes (diamond, hexagon, parallelogram, trapezoid)
-// TODO: resize tool
-// TODO: think of a way to do tests (dummy backend + injected events?)
-// TODO: only store deltas in undo history
-// TODO: use an undo file
-// TODO: inline mode (automated comment banner insertion)
-// TODO: atomic file writes?
-// TODO: write a man page
+// # TODO Features
+// - shapes (diamond, hexagon, parallelogram, trapezoid)
+// - resize tool
+// - box with text header area
+// - unicode
+// - maximum canvas width
+// - banner style text
+//
+// # TODO Enhancements
+// - atomically write files (w/ backup)
+// - only store deltas in undo history
+// - store undo history in a file
+// - display status changes in modeline (saved, opened, trimmed, clipped, etc)
+//
+// # TODO Correctness
+// - think of a way to do tests (dummy backend + injected events?)
+// - performance of a* is abysmal across large distances
 #![allow(clippy::many_single_char_names)]
+extern crate clipboard;
 extern crate cursive;
 extern crate lazy_static;
 extern crate line_drawing;
@@ -103,6 +113,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .leaf("(o) Open", editor_open)
                 .leaf("(s) Save", editor_save)
                 .leaf("(S) Save As", editor_save_as)
+                .leaf("(c) Clip", editor_clip)
+                .leaf("(C) Clip Prefix", editor_clip_prefix)
                 .delimiter()
                 .leaf("(`) Debug", Cursive::toggle_debug_console)
                 .leaf("(q) Quit", editor_quit),
@@ -135,8 +147,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .add_leaf("Erase", editor_tool::<EraseTool, _>(|_| ()))
         .add_leaf("Move", editor_tool::<MoveTool, _>(|_| ()));
 
-    // * * c d * f g * i j k * * * * * * * * * * v w x y z
-    // A B C D E F G H I J K L M N O P Q R * * U V W X Y Z
+    // * * * d * f g * i j k * * * * * * * * * * v w x y z
+    // A B * D E F G H I J K L M N O P Q R * * U V W X Y Z
 
     siv.set_autohide_menu(false);
     siv.add_global_callback(Key::Esc, |s| s.select_menubar());
@@ -146,6 +158,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     siv.add_global_callback('o', editor_open);
     siv.add_global_callback('s', editor_save);
     siv.add_global_callback('S', editor_save_as);
+    siv.add_global_callback('c', editor_clip);
+    siv.add_global_callback('C', editor_clip_prefix);
     siv.add_global_callback('`', Cursive::toggle_debug_console);
     siv.add_global_callback('q', editor_quit);
 
@@ -255,6 +269,24 @@ fn editor_save_as(siv: &mut Cursive) {
     });
 }
 
+fn editor_clip(siv: &mut Cursive) {
+    match with_editor(siv, |e| e.render_to_clipboard("")).map_err(|e| format!("{:?}", e)) {
+        Ok(()) => notify(siv, "clipped", ""),
+        Err(e) => notify(siv, "clip failed", e),
+    }
+}
+
+fn editor_clip_prefix(siv: &mut Cursive) {
+    display_form(siv, "Clip Prefix", |siv, _, prefix| {
+        siv.pop_layer();
+
+        match with_editor(siv, |e| e.render_to_clipboard(prefix)).map_err(|e| format!("{:?}", e)) {
+            Ok(()) => notify(siv, "clipped", ""),
+            Err(e) => notify(siv, "clip failed", e),
+        }
+    });
+}
+
 fn editor_quit(siv: &mut Cursive) {
     with_checked_editor(siv, "Quit", Cursive::quit);
 }
@@ -298,6 +330,8 @@ const HELP: &str = "KEYBINDS:
     o   Open: Open the specified file.
     s   Save: Save buffer to the current path. If there isn't one, this is equivalent to Save As.
     S   Save As: Save buffer to the specified path.
+    c   Clip: Export buffer to the clipboard.
+    C   Clip Prefix: Export buffer to the clipboard with a prefix before each line.
     `   Debug: Open the debug console.
     q   Quit: Quit without saving.
     u   Undo: Undo the last buffer modification.
