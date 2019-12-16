@@ -24,12 +24,14 @@ TUI based ASCII diagram editor.
 # Installation
 Install a [binary release](https://github.com/nytopop/askii/releases), or use `cargo install askii` to compile the latest source release from [crates.io](https://crates.io/crates/askii).
 
-To use askii on Windows or Mac, you'll need to compile it from source. Cross compilation of Rust programs that import C libraries (ncurses) is difficult at best, so binary releases are not provided here.
-
 # Compilation
-Use `cargo`. The binary links against `libncursesw` and `libxcb` (on linux), so make sure they are available during compilation.
+The binary links against a few X11 libs for clipboard functionality (on linux), so make sure they are available during compilation. On debian, they can be installed with:
 
-Alternatively, the [`Makefile`](Makefile) can be used to build a binary and deb / rpm / pacman packages.
+```
+apt install libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxau-dev libxdmcp-dev
+```
+
+Use `cargo` to compile. Alternatively, the [`Makefile`](Makefile) can be used to build a binary and deb / rpm / pacman packages.
 
 ```
 cd askii && make

@@ -23,25 +23,32 @@
 #![allow(clippy::many_single_char_names)]
 extern crate clipboard;
 extern crate cursive;
+extern crate enumset;
 extern crate lazy_static;
 extern crate line_drawing;
 extern crate log;
 extern crate num_traits;
 extern crate parking_lot;
 extern crate pathfinding;
+extern crate smallvec;
 extern crate structopt;
+extern crate unicode_segmentation;
+extern crate unicode_width;
 
+mod backend;
 mod editor;
 mod modeline;
 mod tools;
 mod ui;
 
+use backend::*;
 use editor::*;
 use modeline::*;
 use tools::{PathMode::*, *};
 use ui::*;
 
 use cursive::{
+    backend::{crossterm::Backend as CrossTerm, Backend},
     event::{EventTrigger, Key},
     logger,
     menu::MenuTree,
@@ -101,7 +108,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     debug!("{:?}", opts);
 
     let editor = EditorView::new(Editor::open(opts)?);
-    let mut siv = Cursive::pancurses()?;
+    let mut siv = Cursive::try_new(|| {
+        CrossTerm::init()
+            .map(|cross| BufferedBackend::new(cross))
+            .map(|buf| -> Box<dyn Backend> { Box::new(buf) })
+    })?;
 
     use PathMode::*;
 
@@ -301,6 +312,7 @@ fn editor_redo(siv: &mut Cursive) {
 
 fn editor_trim_margins(siv: &mut Cursive) {
     with_editor_mut(siv, Editor::trim_margins);
+    notify(siv, "trimmed", "");
 }
 
 fn editor_tool<'a, T: 'static, S: 'a>(apply: S) -> impl Fn(&mut Cursive) + 'a

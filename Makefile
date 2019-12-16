@@ -14,6 +14,8 @@ BINPATH=$(DIST)/bin/$(BIN)
 DEBPATH=$(DIST)/$(DEB)
 RPMPATH=$(DIST)/$(RPM)
 PACPATH=$(DIST)/$(PAC)
+OSXPATH=$(DIST)/osx/$(BIN)
+WINPATH=$(DIST)/win/$(BIN).exe
 
 .PHONY: all
 all: $(BINPATH) $(DEBPATH) $(RPMPATH) $(PACPATH)
@@ -31,6 +33,24 @@ $(RPMPATH): $(BINPATH)
 
 $(PACPATH): $(BINPATH)
 	cd $(DIST) && fpm -s dir -t pacman --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d "ncurses >= 6" --license MIT -f bin/$(BIN)
+
+OSX_PREFIX=/usr/local/osx-ndk-x86
+
+$(OSXPATH):
+	mkdir -p $(DIST)/osx
+	PKG_CONFIG_ALLOW_CROSS=1 PATH=$(OSX_PREFIX)/bin:$$PATH LD_LIBRARY_PATH=$(OSX_PREFIX)/lib cargo build --target=x86_64-apple-darwin --release
+	cp target/x86_64-apple-darwin/release/$(BIN) $(OSXPATH)
+
+$(WINPATH):
+	mkdir -p $(DIST)/win
+	cargo build --target=x86_64-pc-windows-gnu --release
+	cp target/x86_64-pc-windows-gnu/release/$(BIN).exe $(WINPATH)
+
+.PHONY: cross
+cross: $(OSXPATH) $(WINPATH)
+
+.PHONY: everything
+everything: all cross
 
 .PHONY: build
 build: $(BINPATH)
@@ -59,7 +79,7 @@ CHANGELOG=$(DIST)/changelog
 TAG=v$(VERSION)
 
 .PHONY: release
-release: distclean all
+release: distclean everything
 	$(eval TOKEN := $(shell cat ~/.github-token-askii))
 	git log $(shell git describe --tags --abbrev=0)..HEAD --oneline > $(CHANGELOG)
 	cargo publish
@@ -70,3 +90,5 @@ release: distclean all
 	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(DEB) -f $(DEBPATH)
 	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(RPM) -f $(RPMPATH)
 	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(PAC) -f $(PACPATH)
+	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(BIN)-osx -f $(OSXPATH)
+	GITHUB_TOKEN=$(TOKEN) gothub upload -u nytopop -r askii -t $(TAG) -n $(BIN).exe -f $(WINPATH)
