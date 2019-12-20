@@ -26,13 +26,13 @@ $(BINPATH):
 	cp target/release/$(BIN) $(BINPATH)
 
 $(DEBPATH): $(BINPATH)
-	cd $(DIST) && fpm -s dir -t deb --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d libncurses6 -d libc6 --license MIT -f --deb-priority optional --deb-no-default-config-files bin/$(BIN)
+	cd $(DIST) && fpm -s dir -t deb --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d "libxcb1" -d "libxcb-render0" -d "libxcb-shape0" -d "libxcb-xfixes0" -d "libxau6" -d "libxdmcp6" -d libc6 --license MIT -f --deb-priority optional --deb-no-default-config-files bin/$(BIN)
 
 $(RPMPATH): $(BINPATH)
-	cd $(DIST) && fpm -s dir -t rpm --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d "ncurses >= 6" --license MIT -f bin/$(BIN)
+	cd $(DIST) && fpm -s dir -t rpm --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d "libxcb >= 1" --license MIT -f bin/$(BIN)
 
 $(PACPATH): $(BINPATH)
-	cd $(DIST) && fpm -s dir -t pacman --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d "ncurses >= 6" --license MIT -f bin/$(BIN)
+	cd $(DIST) && fpm -s dir -t pacman --prefix /usr -n $(NAME) -v $(VERSION) --description $(DESCRIPTION) --maintainer $(AUTHOR) --vendor $(AUTHOR) -d "libxcb" --license MIT -f bin/$(BIN)
 
 OSX_PREFIX=/usr/local/osx-ndk-x86
 
