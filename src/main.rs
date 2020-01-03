@@ -100,8 +100,6 @@ const S45: &str = "Snap45";
 const RTD: &str = "Routed";
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // TODO: consider the case of incompatible terminals
-    env::set_var("TERM", "xterm-1006");
     logger::init();
 
     let opts = Options::from_args();
