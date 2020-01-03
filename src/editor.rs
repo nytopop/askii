@@ -270,14 +270,15 @@ impl View for EditorView {
 
         let buf_bounds = editor.buffer.bounds();
 
-        let bounds = Vec2 {
-            x: max(size.x, max(buf_bounds.x, editor.canvas.x)),
-            y: max(size.y, max(buf_bounds.y, editor.canvas.y)),
+        editor.canvas = Vec2 {
+            x: max(buf_bounds.x, editor.canvas.x),
+            y: max(buf_bounds.y, editor.canvas.y),
         };
 
-        editor.canvas = bounds;
-
-        bounds
+        Vec2 {
+            x: max(size.x, editor.canvas.x),
+            y: max(size.y, editor.canvas.y),
+        }
     }
 }
 

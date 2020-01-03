@@ -189,18 +189,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Help
     siv.add_global_callback('h', editor_help);
 
-    let line = ModeLine::new(editor.clone());
-
-    let editor = OnEventView::new(new_scrollview(editor).with_id(EDITOR_ID)).on_pre_event_inner(
-        EventTrigger::any(),
-        |view, event| {
+    let edit_view = OnEventView::new(new_scrollview(editor.clone()).with_id(EDITOR_ID))
+        .on_pre_event_inner(EventTrigger::any(), |view, event| {
             let mut scroll = view.get_mut();
             let mut ctx = EditorCtx::new(&mut scroll);
             ctx.on_event(event)
-        },
-    );
+        });
 
-    let layout = LinearLayout::vertical().child(editor).child(line);
+    let layout = LinearLayout::vertical()
+        .child(edit_view)
+        .weight(100)
+        .child(ModeLine::new(editor))
+        .weight(1);
 
     siv.add_fullscreen_layer(layout);
 
