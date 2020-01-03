@@ -1,7 +1,7 @@
 [package]
 name = "askii"
 description = "TUI based ASCII diagram editor."
-version = "0.5.5-pre"
+version = "0.5.5-pre0"
 authors = ["nytopop <ericizoita@gmail.com>"]
 edition = "2018"
 
@@ -27,7 +27,7 @@ unicode-width = ">=0"
 enumset = ">=0"
 
 [dependencies.cursive]
-git = "https://github.com/TimonPost/cursive.git"
-branch = "crossterm_update"
+git = "https://github.com/gyscos/cursive.git"
+rev = "f1fe477"
 default-features = false
 features = ["crossterm-backend", "unstable_scroll"]
