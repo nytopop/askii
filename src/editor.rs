@@ -237,7 +237,7 @@ impl<'a> EditorCtx<'a> {
         });
     }
 
-    /// Modify the edit buffer using `render`, without flushing any of changes.
+    /// Modify the edit buffer using `render`, without flushing any changes.
     pub(crate) fn preview<R: FnOnce(&mut Buffer)>(&mut self, render: R) {
         let mut editor = self.0.get_inner_mut().write();
         editor.buffer.discard_edits();
