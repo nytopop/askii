@@ -101,6 +101,7 @@ const RTD: &str = "Routed";
 
 fn main() -> Result<(), Box<dyn Error>> {
     logger::init();
+    log::set_max_level(log::LevelFilter::Info);
 
     let opts = Options::from_args();
     debug!("{:?}", opts);
