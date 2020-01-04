@@ -1,5 +1,5 @@
 NAME := $(shell cargo read-manifest | jq -r ".name")
-VERSION := $(shell cargo read-manifest | jq -r ".version")
+VERSION := $(shell cargo read-manifest | jq -r ".version" | sed 's/-/_/')
 DESCRIPTION := $(shell cargo read-manifest | jq ".description")
 AUTHOR := $(shell cargo read-manifest | jq ".authors[]")
 
