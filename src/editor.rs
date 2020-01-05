@@ -425,9 +425,10 @@ impl Editor {
                 .read(false)
                 .write(true)
                 .create(true)
+                .truncate(true)
                 .open(path)?;
 
-            self.render_to(file)?;
+            self.render_to_file(file)?;
             self.lsave = self.buffer.clone();
             self.dirty = false;
         }
@@ -445,7 +446,7 @@ impl Editor {
     }
 
     /// Render to `file`, performing whitespace cleanup if enabled.
-    fn render_to(&mut self, mut file: File) -> io::Result<()> {
+    fn render_to_file(&mut self, mut file: File) -> io::Result<()> {
         self.canvas = Vec2::new(0, 0);
 
         self.with_snapshot(|ed| {
