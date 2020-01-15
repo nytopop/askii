@@ -52,7 +52,7 @@ use cursive::{
     event::{EventTrigger, Key},
     logger,
     menu::MenuTree,
-    view::{scroll::Scroller, Identifiable, View},
+    view::{scroll::Scroller, Nameable, View},
     views::{Dialog, LinearLayout, OnEventView, ScrollView},
     Cursive,
 };
@@ -190,7 +190,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Help
     siv.add_global_callback('h', editor_help);
 
-    let edit_view = OnEventView::new(new_scrollview(editor.clone()).with_id(EDITOR_ID))
+    let edit_view = OnEventView::new(new_scrollview(editor.clone()).with_name(EDITOR_ID))
         .on_pre_event_inner(EventTrigger::any(), |view, event| {
             let mut scroll = view.get_mut();
             let mut ctx = EditorCtx::new(&mut scroll);
@@ -223,7 +223,7 @@ fn editor_new(siv: &mut Cursive) {
 fn editor_open(siv: &mut Cursive) {
     with_checked_editor(siv, "Open", |siv| {
         display_form(siv, "Open", |siv, id, raw_path| {
-            let mut view = siv.find_id::<Dialog>(id).unwrap();
+            let mut view = siv.find_name::<Dialog>(id).unwrap();
 
             if raw_path.is_empty() {
                 view.set_title("Open: path is empty!");
@@ -258,7 +258,7 @@ fn editor_save(siv: &mut Cursive) {
 
 fn editor_save_as(siv: &mut Cursive) {
     display_form(siv, "Save As", |siv, id, raw_path| {
-        let mut view = siv.find_id::<Dialog>(id).unwrap();
+        let mut view = siv.find_name::<Dialog>(id).unwrap();
 
         if raw_path.is_empty() {
             view.set_title("Save As: path is empty!");

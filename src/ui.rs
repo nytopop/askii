@@ -8,7 +8,7 @@ use super::{
 };
 use cursive::{
     align::HAlign,
-    view::{Identifiable, Margins},
+    view::{Margins, Nameable},
     views::{Dialog, EditView, ScrollView, TextView},
     Cursive,
 };
@@ -41,7 +41,7 @@ pub(super) fn with_editor_mut<T, F>(siv: &mut Cursive, f: F) -> T
 where
     F: FnOnce(&mut Editor) -> T,
 {
-    siv.find_id::<ScrollView<EditorView>>(EDITOR_ID)
+    siv.find_name::<ScrollView<EditorView>>(EDITOR_ID)
         .map(|mut view| f(&mut view.get_inner_mut().write()))
         .unwrap()
 }
@@ -52,7 +52,7 @@ pub(super) fn with_editor<T, F>(siv: &mut Cursive, f: F) -> T
 where
     F: FnOnce(&Editor) -> T,
 {
-    siv.find_id::<ScrollView<EditorView>>(EDITOR_ID)
+    siv.find_name::<ScrollView<EditorView>>(EDITOR_ID)
         .map(|view| f(&view.get_inner().read()))
         .unwrap()
 }
@@ -67,7 +67,7 @@ where
     C: Into<String>,
     F: Fn(&mut Cursive),
 {
-    if siv.find_id::<Dialog>(POPUP_ID).is_some() {
+    if siv.find_name::<Dialog>(POPUP_ID).is_some() {
         return;
     }
 
@@ -80,7 +80,7 @@ where
             siv.pop_layer();
             yes(siv);
         })
-        .with_id(POPUP_ID);
+        .with_name(POPUP_ID);
 
     siv.add_layer(popup);
 }
@@ -92,7 +92,7 @@ where
     T: Into<String>,
     F: Fn(&mut Cursive, &'static str, &str),
 {
-    if siv.find_id::<Dialog>(POPUP_ID).is_some() {
+    if siv.find_name::<Dialog>(POPUP_ID).is_some() {
         return;
     }
 
@@ -106,18 +106,18 @@ where
 
     let input = EditView::new()
         .on_submit(move |siv, input| submit(siv, input))
-        .with_id(INPUT_ID);
+        .with_name(INPUT_ID);
 
     let popup = Dialog::around(input)
         .title(title)
         .button("Ok", move |siv| {
             let input = siv
-                .call_on_id(INPUT_ID, |view: &mut EditView| view.get_content())
+                .call_on_name(INPUT_ID, |view: &mut EditView| view.get_content())
                 .unwrap();
             submit_ok(siv, &input);
         })
         .dismiss_button("Cancel")
-        .with_id(POPUP_ID);
+        .with_name(POPUP_ID);
 
     siv.add_layer(popup);
 }
@@ -148,7 +148,7 @@ where
     T: Into<String>,
     C: Into<String>,
 {
-    if siv.find_id::<Dialog>(unique_id).is_some() {
+    if siv.find_name::<Dialog>(unique_id).is_some() {
         return;
     }
 
@@ -162,6 +162,6 @@ where
             .dismiss_button("Ok")
             .h_align(HAlign::Center)
             .padding(NO_MARGIN)
-            .with_id(unique_id),
+            .with_name(unique_id),
     );
 }
