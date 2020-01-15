@@ -27,7 +27,6 @@ unicode-width = ">=0"
 enumset = ">=0"
 
 [dependencies.cursive]
-git = "https://github.com/gyscos/cursive.git"
-rev = "f1fe477"
+version = "0.14"
 default-features = false
 features = ["crossterm-backend", "unstable_scroll"]

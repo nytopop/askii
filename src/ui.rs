@@ -8,11 +8,18 @@ use super::{
 };
 use cursive::{
     align::HAlign,
-    view::Identifiable,
+    view::{Identifiable, Margins},
     views::{Dialog, EditView, ScrollView, TextView},
     Cursive,
 };
 use std::rc::Rc;
+
+const NO_MARGIN: Margins = Margins {
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+};
 
 /// Run `f` if the editor's buffer has not been modified since the last save, or if user
 /// has confirmed that they're ok with discarding unsaved changes.
@@ -66,7 +73,7 @@ where
 
     let popup = Dialog::text(content)
         .title(title)
-        .padding(((0, 0), (0, 0)))
+        .padding(NO_MARGIN)
         .h_align(HAlign::Center)
         .dismiss_button("No")
         .button("Yes", move |siv| {
@@ -130,7 +137,7 @@ where
             .title(title)
             .dismiss_button("Ok")
             .h_align(HAlign::Center)
-            .padding(((0, 0), (0, 0))),
+            .padding(NO_MARGIN),
     );
 }
 
@@ -154,7 +161,7 @@ where
             .title(title)
             .dismiss_button("Ok")
             .h_align(HAlign::Center)
-            .padding(((0, 0), (0, 0)))
+            .padding(NO_MARGIN)
             .with_id(unique_id),
     );
 }
