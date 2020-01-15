@@ -95,7 +95,7 @@ pre-release: distclean everything
 .PHONY: release
 release: distclean everything
 	$(eval TOKEN := $(shell cat ~/.github-token-askii))
-	git log $(shell git describe --tags --abbrev=0)..HEAD --oneline > $(CHANGELOG)
+	git log $(shell git describe --tags --abbrev=0 --exclude="*pre*")..HEAD --oneline > $(CHANGELOG)
 	cargo publish
 	git tag $(TAG)
 	git push --tags
