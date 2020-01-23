@@ -367,7 +367,7 @@ fn visible_cells<'a>(buf: &'a Buffer, cs: (Vec2, Vec2)) -> impl Iterator<Item = 
     let area = Rect::from_corners(cs.0, cs.1);
 
     buf.iter_within(area.top_left(), area.size())
-        .flat_map(|c| match c {
+        .filter_map(|c| match c {
             Char::Clean(cell) => Some(cell),
             Char::Dirty(cell) => Some(cell),
             _ => None,
