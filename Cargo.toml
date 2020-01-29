@@ -20,7 +20,7 @@ line_drawing = "0.8"
 pathfinding = "2.0"
 num-traits = "0.2"
 clipboard = "0.5"
-cursive_buffered_backend = "0.3.1"
+cursive_buffered_backend = "0.3"
 
 [dependencies.cursive]
 version = "0.14"
