@@ -21,13 +21,11 @@
 // - think of a way to do tests (dummy backend + injected events?)
 // - performance of a* is abysmal across large distances
 #![allow(clippy::many_single_char_names)]
-mod backend;
 mod editor;
 mod modeline;
 mod tools;
 mod ui;
 
-use backend::*;
 use editor::*;
 use modeline::*;
 use tools::{PathMode::*, *};
@@ -42,6 +40,7 @@ use cursive::{
     views::{Dialog, LinearLayout, OnEventView, ScrollView},
     Cursive,
 };
+use cursive_buffered_backend::BufferedBackend;
 use log::debug;
 use std::{env, error::Error, path::PathBuf};
 use structopt::StructOpt;

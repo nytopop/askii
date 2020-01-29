@@ -20,11 +20,7 @@ line_drawing = "0.8"
 pathfinding = "2.0"
 num-traits = "0.2"
 clipboard = "0.5"
-
-smallvec = ">=0"
-unicode-segmentation = ">=1"
-unicode-width = ">=0"
-enumset = ">=0"
+cursive_buffered_backend = "0.3.1"
 
 [dependencies.cursive]
 version = "0.14"
