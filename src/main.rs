@@ -48,8 +48,8 @@ use structopt::StructOpt;
 #[derive(Clone, Debug, StructOpt)]
 #[structopt(
     author = "Made with love by nytopop <ericizoita@gmail.com>.",
-    help_message = "Print help information.",
-    version_message = "Print version information."
+    help_message = "Print help information",
+    version_message = "Print version information"
 )]
 struct Options {
     /// How paths are routed.
