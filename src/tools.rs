@@ -213,7 +213,7 @@ impl Tool for ArrowTool {
 #[derive(Clone)]
 pub(crate) struct TextTool {
     src: Option<Vec2>,
-    ready: bool,
+    cursor_active: bool,
     buffer: Vec<Vec<char>>,
     cursor: Vec2,
 }
@@ -222,7 +222,7 @@ impl Default for TextTool {
     fn default() -> Self {
         Self {
             src: None,
-            ready: false,
+            cursor_active: false,
             buffer: vec![],
             cursor: Vec2::new(0, 0),
         }
@@ -241,23 +241,20 @@ impl Tool for TextTool {
                 position,
                 ..
             } => {
-                self.src = Some(position);
-                self.ready = false;
-                self.buffer.clear();
-                self.buffer.push(vec![]);
-                self.cursor = Vec2::new(0, 0);
-                ctx.preview(|buf| self.render(buf));
+                if !self.cursor_active {
+                    self.src = Some(position);
+                    self.cursor_active = true;
+                    self.buffer.clear();
+                    self.buffer.push(vec![]);
+                    self.cursor = Vec2::new(0, 0);
+                    ctx.preview(|buf| self.render(buf));
+                } else {
+                    ctx.clobber(|buf| self.render(buf));
+                    self.reset();
+                }
             }
 
-            Event::Mouse {
-                event: Release(Left),
-                ..
-            } => {
-                self.ready = true;
-                ctx.preview(|buf| self.render(buf));
-            }
-
-            _ if !self.ready => return None,
+            _ if !self.cursor_active => return None,
 
             Event::Char(c) => {
                 self.buffer[*y].insert(*x, c);
@@ -316,11 +313,8 @@ impl Tool for TextTool {
             }
 
             Event::Key(Key::Esc) => {
+                self.reset();
                 ctx.clobber(|buf| self.render(buf));
-                self.src = None;
-                self.ready = false;
-                self.buffer.clear();
-                self.cursor = Vec2::new(0, 0);
             }
 
             _ => return None,
@@ -342,6 +336,13 @@ impl TextTool {
         }
 
         buf.set_cursor(self.cursor + src);
+    }
+
+    fn reset(&mut self) {
+        self.src = None;
+        self.cursor_active = false;
+        self.buffer.clear();
+        self.cursor = Vec2::new(0, 0);
     }
 }
 

@@ -355,7 +355,7 @@ TOOLS:
 
     Arrow Draw arrows. Click and drag to the target position.
 
-    Text  Write text. Click somewhere and type. Esc will save the content, while clicking anywhere on the canvas discards it.
+    Text  Write text. Click somewhere and type. Esc will discard the entered content, while clicking anywhere on the canvas will save it.
 
     Erase Erase things. Click and drag to form a box, everything inside of which will be erased.
 
