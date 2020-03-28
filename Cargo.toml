@@ -4,7 +4,6 @@ description = "TUI based ASCII diagram editor."
 version = "0.5.7"
 authors = ["nytopop <ericizoita@gmail.com>"]
 edition = "2018"
-
 license = "Apache-2.0 OR MIT"
 homepage = "https://github.com/nytopop/askii"
 repository = "https://github.com/nytopop/askii.git"

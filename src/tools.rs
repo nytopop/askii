@@ -51,34 +51,34 @@ macro_rules! mouse_drag {
 /// drag handling, calling the argument closure when relevant events occur.
 macro_rules! fn_on_event_drag {
     ($render:expr) => {
-    fn on_event(&mut self, ctx: &mut EditorCtx<'_>, event: &Event) -> Option<EventResult> {
-        let (pos, event) = mouse_drag!(ctx, event);
+        fn on_event(&mut self, ctx: &mut EditorCtx<'_>, event: &Event) -> Option<EventResult> {
+            let (pos, event) = mouse_drag!(ctx, event);
 
-        match event {
-            Press(Left) => {
-                self.src = Some(pos);
-                self.dst = Some(pos);
-                ctx.preview(|buf| $render(self, buf));
+            match event {
+                Press(Left) => {
+                    self.src = Some(pos);
+                    self.dst = Some(pos);
+                    ctx.preview(|buf| $render(self, buf));
+                }
+
+                Hold(Left) => {
+                    self.dst = Some(pos);
+                    ctx.preview(|buf| $render(self, buf));
+                }
+
+                Release(Left) => {
+                    self.dst = Some(pos);
+                    ctx.clobber(|buf| $render(self, buf));
+                    self.src = None;
+                    self.dst = None;
+                }
+
+                _ => return None,
             }
 
-            Hold(Left) => {
-                self.dst = Some(pos);
-                ctx.preview(|buf| $render(self, buf));
-            }
-
-            Release(Left) => {
-                self.dst = Some(pos);
-                ctx.clobber(|buf| $render(self, buf));
-                self.src = None;
-                self.dst = None;
-            }
-
-            _ => return None,
+            CONSUMED
         }
-
-        CONSUMED
-    }
-    }
+    };
 }
 
 macro_rules! simple_display {
