@@ -17,6 +17,8 @@
   <a href="./LICENSE-APACHE">
     <img alt="Apache-2.0 OR MIT" src="https://img.shields.io/crates/l/askii?style=flat-square">
   </a>
+  <br><br>
+  <a href="https://asciinema.org/a/329963" target="_blank"><img src="https://asciinema.org/a/329963.svg" /></a>
 </p>
 
 TUI based ASCII diagram editor.
