@@ -166,7 +166,7 @@ impl<'a> EditorCtx<'a> {
     /// Returns `true` if `pos` is located on a scrollbar.
     fn on_scrollbar(&self, offset: Vec2, pos: Vec2) -> bool {
         let core = self.0.get_scroller();
-        let max = core.last_size() + offset;
+        let max = core.last_available_size() + offset;
         let min = max - core.scrollbar_size();
 
         (min.x..=max.x).contains(&pos.x) || (min.y..=max.y).contains(&pos.y)
@@ -767,7 +767,7 @@ impl Buffer {
                 }
                 let idx = min(line.len() - 1, min_ws);
                 let new = line.split_off(idx);
-                mem::replace(line, new);
+                *line = new;
             }
         }
 

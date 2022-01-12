@@ -19,9 +19,9 @@ line_drawing = "0.8"
 pathfinding = "2.0"
 num-traits = "0.2"
 clipboard = "0.5"
-cursive_buffered_backend = "0.3"
+cursive_buffered_backend = "0.6.0"
 
 [dependencies.cursive]
-version = "0.14"
+version = "0.17"
 default-features = false
 features = ["crossterm-backend", "unstable_scroll"]
