@@ -35,8 +35,7 @@ use cursive::{
     backend::Backend,
     backends::crossterm::Backend as CrossTerm,
     event::{EventTrigger, Key},
-    logger,
-    menu::MenuTree,
+    logger, menu,
     view::{scroll::Scroller, Nameable, View},
     views::{Dialog, LinearLayout, OnEventView, ScrollView},
     Cursive,
@@ -104,7 +103,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     siv.menubar()
         .add_subtree(
             "File",
-            MenuTree::new()
+            menu::Tree::new()
                 .leaf("(n) New", editor_new)
                 .leaf("(o) Open", editor_open)
                 .leaf("(s) Save", editor_save)
@@ -117,7 +116,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
         .add_subtree(
             "Edit",
-            MenuTree::new()
+            menu::Tree::new()
                 .leaf("(u) Undo", editor_undo)
                 .leaf("(r) Redo", editor_redo)
                 .leaf("(T) Trim Margins", editor_trim_margins),
@@ -127,14 +126,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         .add_leaf("Box", editor_tool::<BoxTool, _>(|_| ()))
         .add_subtree(
             "Line",
-            MenuTree::new()
+            menu::Tree::new()
                 .leaf(S90, editor_tool::<LineTool, _>(|o| o.path_mode = Snap90))
                 .leaf(S45, editor_tool::<LineTool, _>(|o| o.path_mode = Snap45))
                 .leaf(RTD, editor_tool::<LineTool, _>(|o| o.path_mode = Routed)),
         )
         .add_subtree(
             "Arrow",
-            MenuTree::new()
+            menu::Tree::new()
                 .leaf(S90, editor_tool::<ArrowTool, _>(|o| o.path_mode = Snap90))
                 .leaf(S45, editor_tool::<ArrowTool, _>(|o| o.path_mode = Snap45))
                 .leaf(RTD, editor_tool::<ArrowTool, _>(|o| o.path_mode = Routed)),

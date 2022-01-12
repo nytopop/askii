@@ -767,7 +767,7 @@ impl Buffer {
                 }
                 let idx = min(line.len() - 1, min_ws);
                 let new = line.split_off(idx);
-                mem::replace(line, new);
+                *line = new;
             }
         }
 
